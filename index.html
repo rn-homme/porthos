@@ -1,4 +1,5 @@
 <!-- PORTHOS v1.0 — Phase 1 — Dashboard, Portfolio, Settings -->
+<!-- PORTHOS v2.0 — Phase 2 — DCA Engine, Rebalancing, Action Log, Health Check, Market News -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -262,7 +263,10 @@ const LS_KEYS = {
   cachePrices: 'porthos_cache_prices',
   cacheFx: 'porthos_cache_fx',
   cacheSpy: 'porthos_cache_spy',
-  sessionHigh: 'porthos_session_high_spy'
+  sessionHigh: 'porthos_session_high_spy',
+  spyHistory: 'porthos_spy_history',
+  cacheNews: 'porthos_cache_news',
+  gdriveToken: 'porthos_gdrive_token'
 };
 
 const DEFAULT_SETTINGS = {
@@ -304,11 +308,12 @@ let appData = {
   dcaSchedule: JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE)),
   actionLog: [],
   notes: [],
+  reviewHistory: [],
   settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
 };
 
 // API keys — localStorage ONLY, never written to the Gist.
-let apiConfig = { finnhubKey: '', githubPat: '', gistId: '', discordWebhook: '' };
+let apiConfig = { finnhubKey: '', githubPat: '', gistId: '', discordWebhook: '', googleDriveClientId: '' };
 
 // Runtime / market data (not persisted to Gist).
 let prices = {};           // ticker -> {price, prevClose, dayChangePct, dayChangeAbs, ts, cached}
@@ -319,6 +324,14 @@ let lastRefresh = null;
 let currentTab = 1;
 let isLoadingPrices = false;
 let gistConfigured = false;
+
+// Phase 2 runtime state (not persisted to Gist, except where noted).
+let dcaCalcState = { budget: null, mode: 'Normal', dipTicker: null, result: null };
+let dcaAllocationQueue = [];             // queue of allocations left to log via the DCA modal
+let trimInitiateState = {};              // ticker -> bool, "would you initiate at today's price?"
+let reviewDraft = { thesisChanged: null, thesisNotes: '', newPositions: '' };
+let actionLogFilters = { tickers: [], dateFrom: '', dateTo: '', actionType: 'all', sortDir: 'desc' };
+let newsState = { holdings: [], macro: [], lastRefresh: null, filter: 'all' };
 
 /* ================================================================
    2. UTILITIES
@@ -475,6 +488,7 @@ async function tryLoadFromGist(silent = false) {
     appData.dcaSchedule = parsed.dcaSchedule || JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE));
     appData.actionLog = parsed.actionLog || [];
     appData.notes = parsed.notes || [];
+    appData.reviewHistory = parsed.reviewHistory || [];
     appData.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), parsed.settings || {});
     appData.positions.forEach(ensurePositionBase);
     ensureLogIds();
@@ -573,9 +587,31 @@ async function fetchSpyData() {
       sessionHigh = { price: q.c, since: sessionHigh ? sessionHigh.since : todayISO() };
       persistSessionHigh();
     }
+    recordSpyHistory(q.c);
   } catch (e) {
     spy = Object.assign({}, spy, { cached: true });
   }
+}
+
+// Rolling 90-day SPY close history, used for the Rebalancing tab's drawdown gauge
+// (Finnhub free tier has no 90-day-high field, so we build it ourselves over time).
+function recordSpyHistory(price) {
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(LS_KEYS.spyHistory) || '[]'); } catch (e) { hist = []; }
+  const today = todayISO();
+  const idx = hist.findIndex(h => h.date === today);
+  if (idx >= 0) hist[idx].close = price; else hist.push({ date: today, close: price });
+  hist = hist.slice(-90);
+  localStorage.setItem(LS_KEYS.spyHistory, JSON.stringify(hist));
+  return hist;
+}
+
+function getSpy90dHigh() {
+  try {
+    const hist = JSON.parse(localStorage.getItem(LS_KEYS.spyHistory) || '[]');
+    if (!hist.length) return null;
+    return Math.max(...hist.map(h => h.close));
+  } catch (e) { return null; }
 }
 
 async function refreshAllMarketData() {
@@ -811,8 +847,8 @@ function renderAll() {
   const content = document.getElementById('content');
   const renderers = {
     1: renderDashboard, 2: renderPortfolio, 3: renderDcaEngineTab,
-    4: () => renderPlaceholder(4), 5: () => renderPlaceholder(5),
-    6: () => renderPlaceholder(6), 7: () => renderPlaceholder(7), 8: renderSettings
+    4: renderRebalancingTab, 5: renderActionLogTab,
+    6: renderHealthCheckTab, 7: renderMarketNewsTab, 8: renderSettings
   };
   content.innerHTML = (renderers[currentTab] || renderDashboard)();
   // Trigger number count-up animations after paint.
@@ -1052,14 +1088,167 @@ function renderPortfolio() {
 }
 
 /* ================================================================
-   9. RENDERING — TAB 3 (DCA Engine — logging UI live now,
-      calculator engine itself is Phase 2) & TABS 4–7 PLACEHOLDERS
+   9. RENDERING — TAB 3: DCA ENGINE
    ================================================================ */
+
+// Priority-score-driven monthly allocation calculator. Reuses the same
+// driftScore/convictionBonus/valuationBonus scoring as computePortfolioMetrics
+// (Portfolio tab's Action column) so the two stay consistent.
+function calculateDcaAllocation(rawBudget, mode, dipTicker) {
+  const metrics = computePortfolioMetrics();
+  let budget = Number(rawBudget) || 0;
+  if (mode === 'Crash') budget = budget * 3;
+
+  let candidates = metrics.rows
+    .filter(r => r.score > 0)
+    .map(r => {
+      let score = r.score;
+      if (mode === 'Dip trigger' && dipTicker && r.pos.ticker === dipTicker) score *= 1.25;
+      if (mode === 'Macro event' && (r.pos.tier === 'Growth' || r.pos.tier === 'Moonshot')) score *= 2;
+      return { r, score };
+    });
+
+  let scoreSum = candidates.reduce((s, c) => s + c.score, 0);
+  if (scoreSum <= 0 || candidates.length === 0 || budget <= 0) {
+    return { budget, mode, allocations: [] };
+  }
+
+  const cap = budget * 0.4;
+  let allocations = candidates.map(c => ({
+    r: c.r, score: c.score,
+    amountTHB: Math.min(cap, (c.score / scoreSum) * budget)
+  }));
+
+  // Drop any allocation below the ฿2,000 floor and redistribute its share
+  // proportionally across the remaining candidates, repeating until stable.
+  for (let iter = 0; iter < 10; iter++) {
+    const below = allocations.filter(a => a.amountTHB > 0 && a.amountTHB < 2000);
+    if (!below.length) break;
+    const removedTotal = below.reduce((s, a) => s + a.amountTHB, 0);
+    allocations = allocations.filter(a => !(a.amountTHB > 0 && a.amountTHB < 2000));
+    if (!allocations.length) break;
+    const remainingScoreSum = allocations.reduce((s, a) => s + a.score, 0);
+    allocations.forEach(a => {
+      a.amountTHB = Math.min(cap, a.amountTHB + (a.score / remainingScoreSum) * removedTotal);
+    });
+  }
+
+  const rate = fx.rate || 0;
+  const finalAllocations = allocations.map(a => {
+    const amountUSD = rate ? a.amountTHB / rate : 0;
+    const price = a.r.price !== null ? a.r.price : a.r.pos.avgCost;
+    const sharesToBuy = price > 0 ? amountUSD / price : 0;
+    const curShares = a.r.pos.shares;
+    const curAvgCost = a.r.pos.avgCost;
+    const newShares = curShares + sharesToBuy;
+    const newAvgCost = newShares > 0 ? (curShares * curAvgCost + sharesToBuy * price) / newShares : curAvgCost;
+    const costBasisImprovementPct = curAvgCost > 0 ? ((curAvgCost - newAvgCost) / curAvgCost) * 100 : 0;
+    return {
+      ticker: a.r.pos.ticker, tier: a.r.pos.tier, score: a.score,
+      allocationPct: budget > 0 ? (a.amountTHB / budget) * 100 : 0,
+      amountTHB: a.amountTHB, amountUSD, price, sharesToBuy, newAvgCost, costBasisImprovementPct
+    };
+  }).sort((x, y) => y.amountTHB - x.amountTHB);
+
+  return { budget, mode, allocations: finalAllocations };
+}
+
+function renderDcaCalcOutput(result) {
+  if (!result.allocations.length) {
+    return '<div class="metric-sub" style="margin-top:12px;">No eligible positions to allocate to — all scored positions are at or above target.</div>';
+  }
+  return `
+  <div class="table-wrap" style="margin-top:14px;">
+    <table>
+      <thead>
+        <tr><th>Ticker</th><th>Tier</th><th>Priority Score</th><th>Allocation %</th><th>Amount ฿</th><th>Amount $</th><th>Shares to Buy</th><th>New Avg Cost</th><th>Cost Basis Δ%</th></tr>
+      </thead>
+      <tbody>
+        ${result.allocations.map(a => `
+          <tr>
+            <td class="ticker-cell">${esc(a.ticker)}</td>
+            <td><span class="pill pill-${a.tier}">${a.tier}</span></td>
+            <td>${a.score.toFixed(1)}</td>
+            <td>${a.allocationPct.toFixed(1)}%</td>
+            <td>${fmtTHB(a.amountTHB)}</td>
+            <td>${fmtUSD(a.amountUSD)}</td>
+            <td>${fmtNum(a.sharesToBuy, 4)}</td>
+            <td>${fmtUSD(a.newAvgCost)}</td>
+            <td class="${a.costBasisImprovementPct > 0 ? 'text-success' : 'text-muted'}">${fmtPct(a.costBasisImprovementPct, 2)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  <div class="btn-row"><button class="btn btn-primary" data-action="log-dca-allocation">📝 Log this allocation</button></div>
+  `;
+}
+
+function renderDcaStepupProgress() {
+  const currentYear = new Date().getFullYear();
+  const nextYear = currentYear + 1;
+  const currentDCA = getMonthlyDCA(currentYear);
+  const nextDCA = getMonthlyDCA(nextYear);
+  const totalContributedTHB = appData.actionLog.reduce((s, e) => s + (Number(e.totalTHB) || 0), 0);
+
+  const now = new Date();
+  let d = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(2035, 11, 1);
+  let plannedRemaining = 0;
+  while (d <= end) {
+    plannedRemaining += getMonthlyDCA(d.getFullYear());
+    d.setMonth(d.getMonth() + 1);
+  }
+
+  return `
+  <div class="grid grid-4">
+    <div><div class="metric-label">Current Year (${currentYear}) Monthly</div><div class="metric-value" style="font-size:16px;">${fmtTHB(currentDCA)}</div></div>
+    <div><div class="metric-label">Next Year (${nextYear}) Monthly</div><div class="metric-value" style="font-size:16px;">${fmtTHB(nextDCA)}</div></div>
+    <div><div class="metric-label">Total Contributed to Date</div><div class="metric-value" style="font-size:16px;">${fmtTHB(totalContributedTHB)}</div></div>
+    <div><div class="metric-label">Planned Remaining (to 2035)</div><div class="metric-value" style="font-size:16px;">${fmtTHB(plannedRemaining)}</div></div>
+  </div>`;
+}
+
 function renderDcaEngineTab() {
   const entries = appData.actionLog.slice().sort((a, b) =>
     (new Date(b.date) - new Date(a.date)) || ((b.timestamp || 0) - (a.timestamp || 0)));
 
+  const currentYear = new Date().getFullYear();
+  const defaultBudget = getMonthlyDCA(currentYear);
+  if (dcaCalcState.budget === null || dcaCalcState.budget === undefined) dcaCalcState.budget = defaultBudget;
+  if (!dcaCalcState.dipTicker && appData.positions.length) dcaCalcState.dipTicker = appData.positions[0].ticker;
+
   return `
+  <div class="card">
+    <div class="section-header">Monthly DCA Allocation Calculator</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Monthly Budget ฿ (current year default: ${fmtTHB(defaultBudget)})</label>
+        <input type="number" class="form-input" id="dca-calc-budget" value="${dcaCalcState.budget}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Deployment Mode</label>
+        <select class="form-select" id="dca-calc-mode">
+          ${['Normal', 'Dip trigger', 'Macro event', 'Crash', 'Fallback'].map(m => `<option value="${m}" ${dcaCalcState.mode === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    ${dcaCalcState.mode === 'Dip trigger' ? `
+    <div class="form-group">
+      <label class="form-label">Which stock triggered the dip?</label>
+      <select class="form-select" id="dca-calc-dip-ticker">
+        ${appData.positions.map(p => `<option value="${esc(p.ticker)}" ${dcaCalcState.dipTicker === p.ticker ? 'selected' : ''}>${esc(p.ticker)}</option>`).join('')}
+      </select>
+    </div>` : ''}
+    ${dcaCalcState.mode === 'Crash' ? '<div class="alert-box alert-warning">⚠ This deploys cash reserve. Confirm available cash before executing.</div>' : ''}
+    <div class="btn-row"><button class="btn btn-primary" data-action="calc-dca-allocation">Calculate Allocation</button></div>
+    <div id="dca-calc-output">${dcaCalcState.result ? renderDcaCalcOutput(dcaCalcState.result) : ''}</div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">DCA Step-up Progress</div>
+    ${renderDcaStepupProgress()}
+  </div>
+
   <div class="card" style="text-align:center;">
     <button class="btn btn-primary btn-lg" data-action="open-dca-modal">＋ Log a DCA</button>
   </div>
@@ -1088,12 +1277,6 @@ function renderDcaEngineTab() {
       </table>
     </div>
   </div>
-
-  <div class="card placeholder-card">
-    <div class="big">🚧</div>
-    <h2>DCA Engine</h2>
-    <p><strong>Coming in Phase 2</strong><br>Monthly allocation calculator with Priority Score engine</p>
-  </div>
   `;
 }
 
@@ -1111,6 +1294,701 @@ function renderPlaceholder(tabNum) {
     <h2>${esc(info.name)}</h2>
     <p><strong>Coming in Phase 2</strong><br>${esc(info.desc)}</p>
   </div>`;
+}
+
+/* ================================================================
+   9b. RENDERING — TAB 4: REBALANCING
+   ================================================================ */
+function getCurrentHalfLabel() {
+  const now = new Date();
+  return (now.getMonth() < 6 ? 'H1 ' : 'H2 ') + now.getFullYear();
+}
+
+function getNextReviewDate() {
+  const now = new Date();
+  const jul1 = new Date(now.getFullYear(), 6, 1);
+  return now < jul1 ? jul1 : new Date(now.getFullYear() + 1, 0, 1);
+}
+
+function renderDrawdownGauge(drawdownPct) {
+  const dd = drawdownPct === null || drawdownPct === undefined ? 0 : Math.min(0, drawdownPct);
+  const pct = Math.min(100, (Math.abs(dd) / 30) * 100);
+  let color = 'var(--success)';
+  if (dd <= -15) color = 'var(--danger)';
+  else if (dd <= -5) color = 'var(--warning)';
+  const markerPos = v => (v / 30) * 100;
+  return `
+  <div class="progress-track" style="margin-top:24px;">
+    <div class="progress-fill" style="width:${pct}%;background:${color};"></div>
+    <div class="progress-milestone" style="left:${markerPos(7)}%;"><span>-7%</span></div>
+    <div class="progress-milestone" style="left:${markerPos(15)}%;"><span>-15%</span></div>
+    <div class="progress-milestone" style="left:${markerPos(20)}%;"><span>-20%</span></div>
+    <div class="progress-milestone" style="left:${markerPos(30)}%;"><span>-30%</span></div>
+  </div>
+  <div class="metric-sub" style="margin-top:20px;">${drawdownPct === null || drawdownPct === undefined ? 'Building drawdown history...' : fmtPct(drawdownPct) + ' from high'}</div>`;
+}
+
+function renderDrawdownProtocols(dd) {
+  if (dd === null || dd === undefined) return '';
+  const cards = [];
+  if (dd <= -7) cards.push(['alert-box', 'style="border-left-color:var(--accent);background:rgba(79,142,247,.08);color:var(--accent);"', '📋 Correction Protocol: Deploy 1× monthly DCA into Core tier. Execute within 5 trading days.']);
+  if (dd <= -15) cards.push(['alert-box alert-warning', '', '⚠ Significant Correction Protocol: Stage deployment — 1/3 now into Core, 1/3 at -20%, 1/3 at -25%.']);
+  if (dd <= -20) cards.push(['alert-box alert-danger', '', '🚨 Bear Market Protocol: Deploy 50% of cash reserve into Core tier highest conviction names.']);
+  if (dd <= -30) cards.push(['alert-box alert-danger', '', '🚨 Deep Bear Protocol: Deploy remaining cash reserve. Review all moonshot positions for thesis integrity.']);
+  if (!cards.length) return '<div class="alert-box alert-success">✓ No drawdown protocol active</div>';
+  return cards.map(([cls, style, text]) => `<div class="${cls}" ${style}>${text}</div>`).join('');
+}
+
+function renderSemiAnnualReview(metrics) {
+  const halfLabel = getCurrentHalfLabel();
+  const nextReview = getNextReviewDate();
+  const breachCount = metrics.rows.filter(r => Math.abs(r.drift) > r.threshold).length;
+  const totalValueTHB = metrics.totalValueUSD * (fx.rate || 0);
+  const scenarios = computeGoalScenarios(totalValueTHB);
+  const currentYear = new Date().getFullYear();
+  const expectedStepUp = getMonthlyDCA(currentYear);
+  const prevYearDCA = getMonthlyDCA(currentYear - 1);
+  const stepUpApplied = expectedStepUp >= prevYearDCA;
+  const cashBufferOk = ((Number(appData.settings.cashTHB) || 0) + (Number(appData.settings.cashUSD) || 0) * (fx.rate || 0)) >= appData.settings.cashBuffer;
+  const bestCase = scenarios[scenarios.length - 1];
+
+  return `
+  <div class="card">
+    <div class="section-header">Semi-Annual Review — ${esc(halfLabel)}</div>
+    <div class="metric-sub" style="margin-bottom:16px;">Next review due: ${nextReview.toISOString().slice(0, 10)}</div>
+
+    <div class="form-group">
+      <label class="form-label">1. Has any position's thesis fundamentally changed?</label>
+      <div class="btn-row" style="margin-top:0;">
+        <button class="btn ${reviewDraft.thesisChanged === true ? 'btn-primary' : ''}" data-action="set-thesis-changed" data-val="true">Yes</button>
+        <button class="btn ${reviewDraft.thesisChanged === false ? 'btn-primary' : ''}" data-action="set-thesis-changed" data-val="false">No</button>
+      </div>
+      <textarea class="form-textarea" id="review-thesis-notes" placeholder="Notes on thesis changes...">${esc(reviewDraft.thesisNotes || '')}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">2. Are all positions within drift thresholds?</label>
+      <div class="metric-sub">${breachCount === 0 ? '✓ Yes — all positions within threshold' : '✗ No — ' + breachCount + ' position(s) breaching threshold'}</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">3. Current goal progress vs scenario</label>
+      <div class="metric-sub">${fmtTHB(totalValueTHB)} of ${fmtTHB(appData.settings.goalTHB)} · Bull case (${bestCase.cagrPct}% CAGR) reaches goal by ${bestCase.goalYear || '> 40yr'}</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">4. Has DCA step-up been applied for this year?</label>
+      <div class="metric-sub">${stepUpApplied ? '✓ Yes' : '✗ No'} — ${currentYear}: ${fmtTHB(expectedStepUp)}/mo vs ${currentYear - 1}: ${fmtTHB(prevYearDCA)}/mo</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">5. Any new positions to initiate or exits to execute?</label>
+      <textarea class="form-textarea" id="review-new-positions" placeholder="Notes...">${esc(reviewDraft.newPositions || '')}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">6. USD/THB rate trend</label>
+      <div class="metric-sub">Live: ${fx.rate ? fx.rate.toFixed(2) : '—'} · Alert ฿31.0 · Risk ฿29.0
+        ${fx.rate && fx.rate < 29 ? '<span class="badge badge-danger">RISK</span>' : fx.rate && fx.rate < 31 ? '<span class="badge badge-warning">WATCH</span>' : '<span class="badge badge-success">OK</span>'}</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">7. Any earnings events in next 60 days?</label>
+      <div class="metric-sub text-muted">Wire in Phase 3 via Finnhub earnings calendar</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">8. Is cash buffer above minimum?</label>
+      <div class="metric-sub">${cashBufferOk ? '✓ Yes' : '✗ No'} — minimum buffer ${fmtTHB(appData.settings.cashBuffer)}</div>
+    </div>
+
+    <div class="btn-row"><button class="btn btn-primary" data-action="save-review-notes">💾 Save Review Notes</button></div>
+  </div>`;
+}
+
+function renderRebalancingTab() {
+  const metrics = computePortfolioMetrics();
+  const overweightBreaches = metrics.rows.filter(r => r.drift > r.threshold);
+  const underweightBreaches = metrics.rows.filter(r => r.drift < -r.threshold);
+  const approaching = metrics.rows.filter(r => Math.abs(r.drift) <= r.threshold && Math.abs(r.drift) > r.threshold * 0.7);
+  const totalDriftScore = metrics.rows.reduce((s, r) => s + Math.abs(r.drift), 0);
+
+  const rowsHtml = metrics.rows.map(r => {
+    const absDrift = Math.abs(r.drift);
+    let statusBadge;
+    if (absDrift > r.threshold) statusBadge = '<span class="badge badge-danger">BREACH</span>';
+    else if (absDrift > r.threshold * 0.7) statusBadge = '<span class="badge badge-warning">APPROACHING</span>';
+    else statusBadge = '<span class="badge badge-success">ON TARGET</span>';
+
+    let actionHtml;
+    const price = r.price !== null ? r.price : r.pos.avgCost;
+    if (r.drift > r.threshold) {
+      const excessValueUSD = (r.drift / 100) * metrics.grandTotalUSD;
+      const sharesToSell = price > 0 ? excessValueUSD / price : 0;
+      actionHtml = `🟡 TRIM to target — sell ~${fmtNum(sharesToSell, 4)} sh (~${fmtUSD(excessValueUSD)})`;
+    } else if (r.drift < -r.threshold) {
+      const shortfallUSD = (Math.abs(r.drift) / 100) * metrics.grandTotalUSD;
+      actionHtml = `🟢 PRIORITISE in DCA — shortfall ${fmtUSD(shortfallUSD)} (${fmtTHB(shortfallUSD * (fx.rate || 0))})`;
+    } else {
+      actionHtml = '✓ Hold';
+    }
+
+    return `<tr>
+      <td class="ticker-cell">${esc(r.pos.ticker)}</td>
+      <td><span class="pill pill-${r.pos.tier}">${r.pos.tier}</span></td>
+      <td>${r.currentWeight.toFixed(1)}%</td>
+      <td>${r.pos.targetWeight}%</td>
+      <td class="${r.drift >= 0 ? 'text-danger' : 'text-warning'}">${fmtPct(r.drift, 1)}</td>
+      <td>${r.threshold}%</td>
+      <td>${statusBadge}</td>
+      <td>${actionHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const hasUnderweight = underweightBreaches.length > 0;
+  const trimCards = overweightBreaches.map(r => {
+    const price = r.price !== null ? r.price : r.pos.avgCost;
+    const excessValueUSD = (r.drift / 100) * metrics.grandTotalUSD;
+    const sharesToSell = price > 0 ? excessValueUSD / price : 0;
+    const realizedPlPct = r.pos.avgCost > 0 ? ((price - r.pos.avgCost) / r.pos.avgCost) * 100 : null;
+    const realizedPlUSD = (price - r.pos.avgCost) * sharesToSell;
+    const cond2 = !!trimInitiateState[r.pos.ticker];
+    const cond3 = hasUnderweight;
+    const allMet = cond2 && cond3;
+    return `
+    <div class="card ${allMet ? 'highlight' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div><span class="ticker-cell" style="font-size:16px;">${esc(r.pos.ticker)}</span> <span class="pill pill-${r.pos.tier}">${r.pos.tier}</span></div>
+        ${allMet ? '<span class="badge badge-danger">TRIM RECOMMENDED</span>' : ''}
+      </div>
+      <div class="grid grid-4" style="margin-top:12px;">
+        <div><div class="metric-label">Current / Target</div><div class="metric-value" style="font-size:15px;">${r.currentWeight.toFixed(1)}% / ${r.pos.targetWeight}%</div></div>
+        <div><div class="metric-label">Shares to Sell</div><div class="metric-value" style="font-size:15px;">${fmtNum(sharesToSell, 4)}</div></div>
+        <div><div class="metric-label">Est. Proceeds</div><div class="metric-value" style="font-size:15px;">${fmtUSD(excessValueUSD)}</div></div>
+        <div><div class="metric-label">Realised P/L</div><div class="metric-value ${realizedPlPct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:15px;">${realizedPlPct === null ? '—' : fmtPct(realizedPlPct)} (${fmtUSD(realizedPlUSD)})</div></div>
+      </div>
+      <div class="alert-box alert-warning" style="margin-top:12px;">⚠ Consult Thai PIT remittance rules before transferring proceeds</div>
+      <div class="metric-sub" style="margin-top:10px;">Trim Check:</div>
+      <div style="font-size:13px;line-height:2.1;">
+        <div>✓ Position overweight beyond threshold</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span>${cond2 ? '✓' : '✗'} Would you initiate at today's price?</span>
+          <button class="btn btn-sm" data-action="toggle-trim-initiate" data-ticker="${esc(r.pos.ticker)}">${cond2 ? 'Yes' : 'No'} (toggle)</button>
+        </div>
+        <div>${cond3 ? '✓' : '✗'} Proceeds can redeploy to underweight position</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const dd52 = (sessionHigh && sessionHigh.price && spy.price) ? ((spy.price - sessionHigh.price) / sessionHigh.price) * 100 : null;
+  const high90 = getSpy90dHigh();
+  const dd90 = (high90 && spy.price) ? ((spy.price - high90) / high90) * 100 : null;
+  const ddValues = [dd52, dd90].filter(v => v !== null);
+  const worstDd = ddValues.length ? Math.min(...ddValues) : null;
+
+  return `
+  <div class="card">
+    <div class="section-header">Drift Monitor</div>
+    <div class="grid grid-4" style="margin-bottom:14px;">
+      <div><div class="metric-label">Overweight Breaches</div><div class="metric-value" style="font-size:18px;">${overweightBreaches.length}</div></div>
+      <div><div class="metric-label">Underweight Breaches</div><div class="metric-value" style="font-size:18px;">${underweightBreaches.length}</div></div>
+      <div><div class="metric-label">Approaching Threshold</div><div class="metric-value" style="font-size:18px;">${approaching.length}</div></div>
+      <div><div class="metric-label">Total Drift Score</div><div class="metric-value" style="font-size:18px;">${totalDriftScore.toFixed(1)}</div></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ticker</th><th>Tier</th><th>Current %</th><th>Target %</th><th>Drift</th><th>Threshold</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="8" class="text-muted">No positions yet.</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>
+
+  ${overweightBreaches.length ? `
+  <div class="card">
+    <div class="section-header">Trim Planner</div>
+    ${trimCards}
+  </div>` : ''}
+
+  <div class="card">
+    <div class="section-header">Market Drawdown Monitor</div>
+    <div class="grid grid-4">
+      <div><div class="metric-label">SPY Price</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div></div>
+      <div><div class="metric-label">Day Change</div><div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)}</div></div>
+      <div><div class="metric-label">Drawdown from 52wk High</div><div class="metric-value" style="font-size:16px;">${dd52 !== null ? fmtPct(dd52) : '—'}</div></div>
+      <div><div class="metric-label">Drawdown from 90d High</div><div class="metric-value" style="font-size:16px;">${dd90 !== null ? fmtPct(dd90) : '—'}</div></div>
+    </div>
+    ${renderDrawdownGauge(worstDd)}
+    <div style="margin-top:16px;">${renderDrawdownProtocols(worstDd)}</div>
+  </div>
+
+  ${renderSemiAnnualReview(metrics)}
+  `;
+}
+
+/* ================================================================
+   9c. RENDERING — TAB 5: ACTION LOG
+   ================================================================ */
+function actionLogEntryType(e) {
+  if (e.reason === 'Rebalancing trim') return 'Rebalancing trim';
+  if (e.reason === 'Rebalancing buy') return 'Rebalancing buy';
+  if (e.reason === 'Manual') return 'Manual';
+  return 'DCA buy';
+}
+
+// Replays the action log chronologically to derive the avg-cost-before/after
+// each entry, mirroring recomputeAllPositionsFromLog's math without mutating
+// the live position state.
+function computeActionLogEnriched() {
+  const state = {};
+  appData.positions.forEach(p => { state[p.ticker] = { shares: p.baseShares || 0, avgCost: p.baseAvgCost || 0, tier: p.tier }; });
+  const sorted = appData.actionLog.slice().sort((a, b) =>
+    (new Date(a.date) - new Date(b.date)) || ((a.timestamp || 0) - (b.timestamp || 0)));
+  const enriched = [];
+  sorted.forEach(e => {
+    const st = state[e.ticker] || (state[e.ticker] = { shares: 0, avgCost: 0, tier: '—' });
+    const before = { shares: st.shares, avgCost: st.avgCost };
+    const entryShares = Number(e.shares) || 0;
+    const newShares = st.shares + entryShares;
+    let newAvgCost = st.avgCost;
+    if (newShares !== 0) {
+      if (entryShares > 0) newAvgCost = (st.shares * st.avgCost + entryShares * (Number(e.price) || 0)) / newShares;
+    } else {
+      newAvgCost = 0;
+    }
+    st.shares = newShares; st.avgCost = newAvgCost;
+    const costBasisDeltaPct = before.avgCost > 0 ? ((newAvgCost - before.avgCost) / before.avgCost) * 100 : null;
+    enriched.push({
+      entry: e, tier: st.tier,
+      avgCostBefore: before.avgCost, avgCostAfter: newAvgCost, costBasisDeltaPct,
+      type: actionLogEntryType(e)
+    });
+  });
+  return enriched;
+}
+
+async function googleDriveAuth() {
+  return new Promise(resolve => {
+    if (!apiConfig.googleDriveClientId) { resolve(null); return; }
+    const redirectUri = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams({
+      client_id: apiConfig.googleDriveClientId,
+      redirect_uri: redirectUri,
+      response_type: 'token',
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      include_granted_scopes: 'true',
+      state: 'porthos_gdrive'
+    });
+    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+    const popup = window.open(authUrl, 'porthos_gdrive_auth', 'width=480,height=640');
+    if (!popup) { toast('Popup blocked — allow popups for this site', 'error'); resolve(null); return; }
+    const timer = setInterval(() => {
+      if (popup.closed) { clearInterval(timer); resolve(null); return; }
+      try {
+        const url = popup.location.href;
+        if (url && url.indexOf(redirectUri) === 0) {
+          const hash = new URL(url).hash.replace(/^#/, '');
+          const token = new URLSearchParams(hash).get('access_token');
+          popup.close();
+          clearInterval(timer);
+          if (token) { localStorage.setItem(LS_KEYS.gdriveToken, token); resolve(token); }
+          else resolve(null);
+        }
+      } catch (e) { /* cross-origin while on accounts.google.com — ignore until redirect lands */ }
+    }, 500);
+  });
+}
+
+async function saveToGoogleDrive() {
+  if (!apiConfig.googleDriveClientId) { toast('Add a Google Drive Client ID in Settings → Integrations first', 'error'); return; }
+  let token = localStorage.getItem(LS_KEYS.gdriveToken);
+  if (!token) {
+    token = await googleDriveAuth();
+    if (!token) { toast('Google Drive authorisation cancelled', 'error'); return; }
+  }
+  try {
+    const filename = 'porthos-backup-' + todayISO() + '.json';
+    const metadata = { name: filename, mimeType: 'application/json' };
+    const boundary = 'porthos-boundary';
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(appData)}\r\n--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
+      body
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem(LS_KEYS.gdriveToken);
+        toast('Google Drive session expired — click Save to Google Drive again to reauthorise', 'error');
+        return;
+      }
+      throw new Error('Drive API ' + res.status);
+    }
+    toast('Saved ' + filename + ' to Google Drive', 'success');
+  } catch (e) {
+    toast('Google Drive save failed: ' + e.message, 'error');
+  }
+}
+
+function renderActionLogTab() {
+  const enriched = computeActionLogEnriched();
+  const allTickers = Array.from(new Set(appData.actionLog.map(e => e.ticker))).sort();
+
+  let filtered = enriched.filter(x => {
+    if (actionLogFilters.tickers.length && !actionLogFilters.tickers.includes(x.entry.ticker)) return false;
+    if (actionLogFilters.dateFrom && x.entry.date < actionLogFilters.dateFrom) return false;
+    if (actionLogFilters.dateTo && x.entry.date > actionLogFilters.dateTo) return false;
+    if (actionLogFilters.actionType !== 'all' && x.type !== actionLogFilters.actionType) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    const d = (new Date(a.entry.date) - new Date(b.entry.date)) || ((a.entry.timestamp || 0) - (b.entry.timestamp || 0));
+    return actionLogFilters.sortDir === 'desc' ? -d : d;
+  });
+
+  const totalTHB = filtered.reduce((s, x) => s + (Number(x.entry.totalTHB) || 0), 0);
+  const totalUSD = filtered.reduce((s, x) => s + ((Number(x.entry.shares) || 0) * (Number(x.entry.price) || 0)), 0);
+  const tickerCounts = {};
+  filtered.forEach(x => { tickerCounts[x.entry.ticker] = (tickerCounts[x.entry.ticker] || 0) + 1; });
+  let mostBought = '—', mostBoughtCount = 0;
+  Object.entries(tickerCounts).forEach(([t, c]) => { if (c > mostBoughtCount) { mostBought = t; mostBoughtCount = c; } });
+  const dates = filtered.map(x => new Date(x.entry.date)).filter(d => !isNaN(d));
+  let avgMonthly = 0;
+  if (dates.length) {
+    const earliest = new Date(Math.min(...dates));
+    const now = new Date();
+    const months = Math.max(1, (now.getFullYear() - earliest.getFullYear()) * 12 + (now.getMonth() - earliest.getMonth()) + 1);
+    avgMonthly = totalTHB / months;
+  }
+
+  return `
+  <div class="card">
+    <div class="section-header">Filters</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Tickers (Ctrl/Cmd-click for multiple)</label>
+        <select class="form-select" id="log-filter-tickers" multiple size="4">
+          ${allTickers.map(t => `<option value="${esc(t)}" ${actionLogFilters.tickers.includes(t) ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Action Type</label>
+        <select class="form-select" id="log-filter-type">
+          ${['all', 'DCA buy', 'Rebalancing trim', 'Rebalancing buy', 'Manual'].map(t => `<option value="${t}" ${actionLogFilters.actionType === t ? 'selected' : ''}>${t === 'all' ? 'All' : t}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">From</label><input type="date" class="form-input" id="log-filter-from" value="${esc(actionLogFilters.dateFrom)}"></div>
+      <div class="form-group"><label class="form-label">To</label><input type="date" class="form-input" id="log-filter-to" value="${esc(actionLogFilters.dateTo)}"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" data-action="apply-log-filters">Apply Filters</button>
+      <button class="btn" data-action="clear-log-filters">Clear Filters</button>
+      <button class="btn" data-action="toggle-log-sort">Sort: ${actionLogFilters.sortDir === 'desc' ? 'Newest first' : 'Oldest first'} 🔃</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid grid-4">
+      <div><div class="metric-label">Entries Shown</div><div class="metric-value" style="font-size:18px;">${filtered.length}</div></div>
+      <div><div class="metric-label">Total Deployed ฿</div><div class="metric-value" style="font-size:18px;">${fmtTHB(totalTHB)}</div></div>
+      <div><div class="metric-label">Total Deployed $</div><div class="metric-value" style="font-size:18px;">${fmtUSD(totalUSD)}</div></div>
+      <div><div class="metric-label">Most Bought</div><div class="metric-value" style="font-size:18px;">${esc(mostBought)}</div></div>
+    </div>
+    <div class="metric-sub" style="margin-top:10px;">Average monthly DCA (over filtered range): ${fmtTHB(avgMonthly)}</div>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Date</th><th>Ticker</th><th>Tier</th><th>Action Type</th><th>Shares</th><th>Price $</th><th>Total $</th><th>Total ฿</th>
+          <th>Avg Cost Before</th><th>Avg Cost After</th><th>Cost Basis Δ%</th><th>Trigger</th><th>Notes</th><th></th><th></th>
+        </tr></thead>
+        <tbody>
+          ${filtered.length === 0 ? '<tr><td colspan="15" class="text-muted">No entries match filters.</td></tr>' : filtered.map(x => {
+            const e = x.entry;
+            const totalUSDRow = (Number(e.shares) || 0) * (Number(e.price) || 0);
+            return `<tr>
+              <td>${esc(e.date)}</td>
+              <td class="ticker-cell">${esc(e.ticker)}</td>
+              <td><span class="pill pill-${x.tier}">${esc(x.tier)}</span></td>
+              <td>${esc(x.type)}</td>
+              <td>${fmtNum(e.shares, 4)}</td>
+              <td>${fmtUSD(e.price)}</td>
+              <td>${fmtUSD(totalUSDRow)}</td>
+              <td>${fmtTHB(e.totalTHB)}</td>
+              <td>${fmtUSD(x.avgCostBefore)}</td>
+              <td>${fmtUSD(x.avgCostAfter)}</td>
+              <td class="${x.costBasisDeltaPct > 0 ? 'text-danger' : x.costBasisDeltaPct < 0 ? 'text-success' : ''}">${x.costBasisDeltaPct === null ? '—' : fmtPct(x.costBasisDeltaPct, 2)}</td>
+              <td>${esc(e.reason)}</td>
+              <td class="text-secondary" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '—')}</td>
+              <td><button class="btn btn-sm" data-action="edit-dca-log" data-log-id="${esc(e.id)}">✏️</button></td>
+              <td><button class="btn btn-sm btn-danger" data-action="delete-dca-log" data-log-id="${esc(e.id)}">✕</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="btn-row">
+      <button class="btn" data-action="export-log-csv">⬇ Export CSV</button>
+      <button class="btn" data-action="export-json">⬇ Export JSON</button>
+      <button class="btn" data-action="save-to-drive">📁 Save to Google Drive</button>
+    </div>
+  </div>
+  `;
+}
+
+/* ================================================================
+   9d. RENDERING — TAB 6: HEALTH CHECK
+   ================================================================ */
+function computeRequiredMonthlyDCA(currentValueTHB, cagrPct, monthsToTarget) {
+  if (monthsToTarget <= 0) return 0;
+  const r = Math.pow(1 + cagrPct / 100, 1 / 12) - 1;
+  const growthFactor = Math.pow(1 + r, monthsToTarget);
+  const required = (appData.settings.goalTHB - currentValueTHB * growthFactor) * r / (growthFactor - 1);
+  return Math.max(0, required);
+}
+
+function computeHealthCheckScenarios(currentValueTHB) {
+  const today = new Date();
+  const target = new Date(appData.settings.targetDate);
+  const monthsToTarget = Math.max(0, (target.getFullYear() - today.getFullYear()) * 12 + (target.getMonth() - today.getMonth()));
+  const pmtNow = getMonthlyDCA(today.getFullYear());
+  const probLabels = { 20: 'Base case (moderate)', 25: 'Good case', 30: 'Bull case' };
+
+  const scenarios = [20, 25, 30].map(cagrPct => {
+    const r = Math.pow(1 + cagrPct / 100, 1 / 12) - 1;
+    const growthFactor = Math.pow(1 + r, monthsToTarget);
+    const terminalValue = monthsToTarget > 0
+      ? currentValueTHB * growthFactor + pmtNow * ((growthFactor - 1) / r)
+      : currentValueTHB;
+
+    let value = currentValueTHB, d = new Date(today.getFullYear(), today.getMonth(), 1), goalYear = null;
+    for (let m = 0; m < 40 * 12; m++) {
+      const pmt = getMonthlyDCA(d.getFullYear());
+      value = value * (1 + r) + pmt;
+      d.setMonth(d.getMonth() + 1);
+      if (value >= appData.settings.goalTHB) { goalYear = d.getFullYear(); break; }
+    }
+    const requiredPMT = computeRequiredMonthlyDCA(currentValueTHB, cagrPct, monthsToTarget);
+    return { cagrPct, terminalValue, goalYear, requiredPMT, probLabel: probLabels[cagrPct] };
+  });
+
+  let closestIdx = 0, closestDiff = Infinity;
+  scenarios.forEach((s, i) => {
+    const diff = Math.abs(s.terminalValue - appData.settings.goalTHB);
+    if (diff < closestDiff) { closestDiff = diff; closestIdx = i; }
+  });
+  scenarios.forEach((s, i) => s.isClosest = i === closestIdx);
+  return scenarios;
+}
+
+function renderFxImpactPanel(metrics) {
+  const currentValueUSD = metrics.totalValueUSD;
+  const today = new Date();
+  const target = new Date(appData.settings.targetDate);
+  const monthsToTarget = Math.max(0, (target.getFullYear() - today.getFullYear()) * 12 + (target.getMonth() - today.getMonth()));
+  const r = Math.pow(1.25, 1 / 12) - 1;
+  const growthFactor = Math.pow(1 + r, monthsToTarget);
+  const pmtNow = getMonthlyDCA(today.getFullYear());
+
+  const scenarios = [
+    { label: 'Current Rate (live)', rate: fx.rate },
+    { label: 'Alert Rate ฿31.0', rate: 31.0 },
+    { label: 'Risk Scenario ฿29.0', rate: 29.0 }
+  ].map(s => {
+    if (!s.rate) return Object.assign({}, s, { currentTHB: null, projected2035THB: null });
+    const currentTHB = currentValueUSD * s.rate;
+    const projected2035THB = monthsToTarget > 0 ? currentTHB * growthFactor + pmtNow * ((growthFactor - 1) / r) : currentTHB;
+    return Object.assign({}, s, { currentTHB, projected2035THB });
+  });
+
+  const headwind = (scenarios[0].projected2035THB !== null && scenarios[2].projected2035THB !== null)
+    ? scenarios[0].projected2035THB - scenarios[2].projected2035THB : null;
+
+  return `
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scenario</th><th>Rate</th><th>Current ฿ Value</th><th>Projected 2035 ฿ (25% CAGR)</th></tr></thead>
+      <tbody>
+        ${scenarios.map(s => `<tr><td>${esc(s.label)}</td><td>${s.rate ? s.rate.toFixed(2) : '—'}</td><td>${fmtTHB(s.currentTHB)}</td><td>${fmtTHB(s.projected2035THB)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  <div class="metric-sub" style="margin-top:10px;">${headwind !== null ? `FX headwind if THB strengthens to ฿29: −${fmtTHB(headwind)} by 2035` : 'Live FX rate required to compute headwind estimate.'}</div>
+  `;
+}
+
+function renderWhatNextLog() {
+  const notes = (appData.notes || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  return `
+  <div class="card">
+    <div class="section-header">"What Next" Log</div>
+    <div class="metric-sub" style="margin-bottom:12px;">Your open-ended future plan — edit anytime</div>
+    <div class="btn-row" style="margin-top:0;margin-bottom:14px;"><button class="btn btn-primary" data-action="open-add-note">＋ Add Note</button></div>
+    ${notes.length === 0 ? '<div class="metric-sub text-muted">What happens when you reach ฿15M? Add your thoughts here.</div>' :
+      notes.map(n => `
+      <div class="alert-box" style="display:block;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span class="text-muted" style="font-size:11px;">${new Date(n.timestamp).toLocaleString()}</span>
+          <button class="btn btn-sm btn-danger" data-action="delete-note" data-note-id="${esc(n.id)}">✕ delete</button>
+        </div>
+        <div style="margin-top:6px;white-space:pre-wrap;">${esc(n.text)}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function renderHealthCheckTab() {
+  const metrics = computePortfolioMetrics();
+  const totalValueTHB = metrics.totalValueUSD * (fx.rate || 0);
+  const pctGoal = appData.settings.goalTHB > 0 ? Math.min(100, Math.max(0, (totalValueTHB / appData.settings.goalTHB) * 100)) : 0;
+  const scenarios = computeHealthCheckScenarios(totalValueTHB);
+
+  return `
+  <div class="card">
+    <div class="section-header">Goal Progress Scenarios</div>
+    <div class="metric-value">${fmtTHB(totalValueTHB)} <span class="text-muted" style="font-size:13px;font-weight:400;">/ ${fmtTHB(appData.settings.goalTHB)}</span></div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pctGoal}%;background:var(--success);"></div></div>
+    <div class="metric-sub" style="margin-bottom:14px;">${pctGoal.toFixed(1)}% of goal reached</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>CAGR</th><th>Projected Terminal Value</th><th>Goal Achieved Year</th><th>Monthly DCA Required</th><th>Probability</th></tr></thead>
+        <tbody>
+          ${scenarios.map(s => `
+            <tr class="${s.isClosest ? 'row-highlight' : ''}">
+              <td>${s.cagrPct}% CAGR</td>
+              <td>${fmtTHB(s.terminalValue)}</td>
+              <td>${s.goalYear ? s.goalYear : '> 40yr'}</td>
+              <td>${fmtTHB(s.requiredPMT)}</td>
+              <td>${esc(s.probLabel)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">FX Impact Panel</div>
+    ${renderFxImpactPanel(metrics)}
+  </div>
+
+  ${renderWhatNextLog()}
+  `;
+}
+
+/* ================================================================
+   9e. RENDERING — TAB 7: MARKET NEWS
+   ================================================================ */
+async function fetchHoldingsNews() {
+  if (!apiConfig.finnhubKey) return [];
+  const to = todayISO();
+  const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 7);
+  const from = fromDate.toISOString().slice(0, 10);
+  const results = [];
+  for (const pos of appData.positions) {
+    try {
+      const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(pos.ticker)}&from=${from}&to=${to}&token=${encodeURIComponent(apiConfig.finnhubKey)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Finnhub news ' + res.status);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        data.slice(0, 5).forEach(item => results.push(Object.assign({}, item, { ticker: pos.ticker, tier: pos.tier })));
+      }
+    } catch (e) { /* skip this ticker silently — one bad symbol shouldn't blank the whole feed */ }
+    await sleep(200);
+  }
+  results.sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
+  return results.slice(0, 50);
+}
+
+async function fetchMacroNews() {
+  if (!apiConfig.finnhubKey) return [];
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${encodeURIComponent(apiConfig.finnhubKey)}`);
+    if (!res.ok) throw new Error('Finnhub news ' + res.status);
+    const data = await res.json();
+    return Array.isArray(data) ? data.slice(0, 20) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function refreshNewsData() {
+  if (!apiConfig.finnhubKey) { toast('Add a Finnhub API key in Settings to enable news', 'error'); return; }
+  try {
+    const [holdings, macro] = await Promise.all([fetchHoldingsNews(), fetchMacroNews()]);
+    newsState.holdings = holdings;
+    newsState.macro = macro;
+    newsState.lastRefresh = Date.now();
+    try { localStorage.setItem(LS_KEYS.cacheNews, JSON.stringify(newsState)); } catch (e) { /* ignore */ }
+    renderAll();
+  } catch (e) {
+    toast('Unable to load news. Check API key or try refreshing.', 'error');
+  }
+}
+
+function loadNewsCache() {
+  try {
+    const raw = localStorage.getItem(LS_KEYS.cacheNews);
+    if (raw) newsState = Object.assign(newsState, JSON.parse(raw));
+  } catch (e) { /* ignore */ }
+}
+
+function newsCardHtml(item, isMacro) {
+  const dt = item.datetime ? new Date(item.datetime * 1000) : null;
+  const dtStr = dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
+  const summary = (item.summary || '').slice(0, 120);
+  return `
+  <div class="alert-box" style="display:block;">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
+      ${isMacro ? '<span class="badge badge-muted">MACRO</span>' : `<span class="pill pill-${item.tier}">${esc(item.ticker)}</span>`}
+      <span class="text-muted" style="font-size:11px;">${dtStr} · ${esc(item.source || '')}</span>
+    </div>
+    <a href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer" style="font-weight:700;color:var(--text);text-decoration:none;">${esc(item.headline || '(no headline)')}</a>
+    <div class="text-secondary" style="font-size:12px;margin-top:4px;">${esc(summary)}${item.summary && item.summary.length > 120 ? '…' : ''}</div>
+  </div>`;
+}
+
+function renderMarketNewsTab() {
+  if (!apiConfig.finnhubKey) {
+    return `<div class="card placeholder-card"><div class="big">🔑</div><p>Add Finnhub API key in Settings to enable news</p></div>`;
+  }
+
+  const allTickers = appData.positions.map(p => p.ticker);
+  let holdingsShown = newsState.holdings;
+  let macroShown = newsState.macro;
+  if (newsState.filter === 'holdings') macroShown = [];
+  else if (newsState.filter === 'macro') holdingsShown = [];
+  else if (newsState.filter !== 'all') { holdingsShown = holdingsShown.filter(i => i.ticker === newsState.filter); macroShown = []; }
+
+  const filterButtons = ['all', 'holdings', 'macro', ...allTickers].map(f => {
+    const label = f === 'all' ? 'All' : f === 'holdings' ? 'Holdings' : f === 'macro' ? 'Macro' : f;
+    return `<button class="btn btn-sm ${newsState.filter === f ? 'btn-primary' : ''}" data-action="filter-news" data-filter="${esc(f)}">${esc(label)}</button>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div class="btn-row" style="margin-top:0;">
+      <button class="btn btn-primary" data-action="refresh-news">🔄 Refresh News</button>
+      <span class="metric-sub" style="align-self:center;">Last refreshed: ${newsState.lastRefresh ? new Date(newsState.lastRefresh).toLocaleTimeString() : 'never'}</span>
+    </div>
+    <div class="btn-row">${filterButtons}</div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">Holdings News</div>
+    ${holdingsShown.length === 0 ? '<div class="metric-sub text-muted">No holdings news loaded yet. Click Refresh News.</div>' : holdingsShown.map(i => newsCardHtml(i, false)).join('')}
+  </div>
+
+  <div class="card">
+    <div class="section-header">Market &amp; Macro News</div>
+    ${macroShown.length === 0 ? '<div class="metric-sub text-muted">No macro news loaded yet. Click Refresh News.</div>' : macroShown.map(i => newsCardHtml(i, true)).join('')}
+  </div>
+  `;
 }
 
 /* ================================================================
@@ -1226,6 +2104,28 @@ function renderSettings() {
       <button class="btn btn-danger" data-action="reset-all-data">🗑 Reset All Data</button>
     </div>
   </div>
+
+  <div class="card">
+    <div class="section-header">Integrations</div>
+    <div class="form-group">
+      <label class="form-label">Google Drive Client ID</label>
+      <input type="text" class="form-input" id="input-gdrive-client-id" value="${esc(apiConfig.googleDriveClientId || '')}">
+      <div class="metric-sub" style="margin-top:6px;">Get from Google Cloud Console → APIs → Credentials</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" data-action="save-gdrive-settings">💾 Save Integration Settings</button>
+    </div>
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;color:var(--text-secondary);font-size:13px;">How to set up Google Drive export</summary>
+      <ol style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding-left:20px;margin-top:8px;">
+        <li>Go to console.cloud.google.com</li>
+        <li>Create a project → Enable Google Drive API</li>
+        <li>Create OAuth 2.0 credentials (Web application type)</li>
+        <li>Add your GitHub Pages URL as authorised JavaScript origin</li>
+        <li>Copy Client ID and paste above</li>
+      </ol>
+    </details>
+  </div>
   `;
 }
 
@@ -1238,30 +2138,34 @@ function closeModal() { document.getElementById('modal-root').innerHTML = ''; ed
 // null when the modal is in "add new" mode.
 let editingLogId = null;
 
-function openDcaModal(logId) {
+function openDcaModal(logId, prefill) {
   editingLogId = logId || null;
   const entry = editingLogId ? appData.actionLog.find(e => e.id === editingLogId) : null;
   const tickers = appData.positions.map(p => p.ticker);
   if (entry && !tickers.includes(entry.ticker)) tickers.unshift(entry.ticker);
   const reasons = ['Dip trigger', 'Macro event', 'Fallback', 'Manual', 'Rebalancing trim', 'Rebalancing buy'];
+  const title = entry ? '✏️ Edit DCA Entry' : (prefill ? `＋ Log Allocation: ${esc(prefill.ticker)}` : '＋ Log a DCA');
+  const queueNote = (!entry && prefill && dcaAllocationQueue.length > 0)
+    ? `<div class="metric-sub" style="margin-bottom:10px;">${dcaAllocationQueue.length} more allocation(s) queued after this one.</div>` : '';
   document.getElementById('modal-root').innerHTML = `
   <div class="modal-overlay" data-action="modal-overlay-close">
     <div class="modal" data-action="noop">
-      <h3>${entry ? '✏️ Edit DCA Entry' : '＋ Log a DCA'}</h3>
+      <h3>${title}</h3>
+      ${queueNote}
       <div class="form-group"><label class="form-label">Date</label>
         <input type="date" class="form-input" id="dca-date" value="${esc(entry ? entry.date : todayISO())}"></div>
       <div class="form-group"><label class="form-label">Ticker</label>
-        <select class="form-select" id="dca-ticker">${tickers.map(t => `<option value="${esc(t)}" ${entry && entry.ticker === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <select class="form-select" id="dca-ticker">${tickers.map(t => `<option value="${esc(t)}" ${(entry ? entry.ticker === t : (prefill && prefill.ticker === t)) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Shares Bought</label>
-          <input type="number" step="any" class="form-input" id="dca-shares" value="${entry ? entry.shares : 0}"></div>
+          <input type="number" step="any" class="form-input" id="dca-shares" value="${entry ? entry.shares : (prefill ? Number(prefill.sharesToBuy.toFixed(6)) : 0)}"></div>
         <div class="form-group"><label class="form-label">Price/Share USD</label>
-          <input type="number" step="any" class="form-input" id="dca-price" value="${entry ? entry.price : 0}"></div>
+          <input type="number" step="any" class="form-input" id="dca-price" value="${entry ? entry.price : (prefill ? Number(prefill.price.toFixed(4)) : 0)}"></div>
       </div>
       <div class="form-group"><label class="form-label">Total Amount ฿</label>
-        <input type="number" step="any" class="form-input" id="dca-thb" value="${entry ? entry.totalTHB : 0}"></div>
+        <input type="number" step="any" class="form-input" id="dca-thb" value="${entry ? entry.totalTHB : (prefill ? Number(prefill.amountTHB.toFixed(2)) : 0)}"></div>
       <div class="form-group"><label class="form-label">Trigger Reason</label>
-        <select class="form-select" id="dca-reason">${reasons.map(r => `<option value="${esc(r)}" ${entry && entry.reason === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
+        <select class="form-select" id="dca-reason">${reasons.map(r => `<option value="${esc(r)}" ${(entry ? entry.reason === r : (prefill && r === 'Rebalancing buy')) ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="form-label">Notes (optional)</label>
         <textarea class="form-textarea" id="dca-notes">${esc(entry && entry.notes ? entry.notes : '')}</textarea></div>
       <div class="btn-row">
@@ -1311,7 +2215,12 @@ function confirmDca() {
   const wasEditing = !!editingLogId;
   closeModal();
   toast(wasEditing ? 'DCA entry updated' : 'DCA logged', 'success');
-  renderAll();
+  if (dcaAllocationQueue.length > 0) {
+    const next = dcaAllocationQueue.shift();
+    openDcaModal(null, next);
+  } else {
+    renderAll();
+  }
 }
 
 function deleteDcaLogEntry(id) {
@@ -1382,6 +2291,42 @@ function removePosition(ticker) {
   debouncedSaveToGist();
   renderAll();
   toast('Position removed', 'success');
+}
+
+function openAddNoteModal() {
+  document.getElementById('modal-root').innerHTML = `
+  <div class="modal-overlay" data-action="modal-overlay-close">
+    <div class="modal" data-action="noop">
+      <h3>＋ Add Note</h3>
+      <div class="form-group"><label class="form-label">Note</label>
+        <textarea class="form-textarea" id="new-note-text" style="min-height:120px;"></textarea></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="confirm-add-note">Save Note</button>
+        <button class="btn" data-action="modal-overlay-close">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function confirmAddNote() {
+  const text = document.getElementById('new-note-text').value.trim();
+  if (!text) { toast('Note cannot be empty', 'error'); return; }
+  appData.notes = appData.notes || [];
+  appData.notes.push({ id: genId(), timestamp: Date.now(), text });
+  persistDataCache();
+  debouncedSaveToGist();
+  closeModal();
+  renderAll();
+  toast('Note saved', 'success');
+}
+
+function deleteNote(id) {
+  if (!confirm('Delete this note?')) return;
+  appData.notes = (appData.notes || []).filter(n => n.id !== id);
+  persistDataCache();
+  debouncedSaveToGist();
+  renderAll();
+  toast('Note deleted', 'success');
 }
 
 /* ================================================================
@@ -1479,12 +2424,15 @@ function attachEventDelegation() {
         localStorage.removeItem(LS_KEYS.cacheFx);
         localStorage.removeItem(LS_KEYS.cacheSpy);
         localStorage.removeItem(LS_KEYS.sessionHigh);
-        apiConfig = { finnhubKey: '', githubPat: '', gistId: '', discordWebhook: '' };
+        localStorage.removeItem(LS_KEYS.spyHistory);
+        localStorage.removeItem(LS_KEYS.cacheNews);
+        localStorage.removeItem(LS_KEYS.gdriveToken);
+        apiConfig = { finnhubKey: '', githubPat: '', gistId: '', discordWebhook: '', googleDriveClientId: '' };
         gistConfigured = false;
         appData = {
           positions: JSON.parse(JSON.stringify(DEFAULT_POSITIONS)),
           dcaSchedule: JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE)),
-          actionLog: [], notes: [],
+          actionLog: [], notes: [], reviewHistory: [],
           settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
         };
         appData.positions.forEach(ensurePositionBase);
@@ -1492,10 +2440,116 @@ function attachEventDelegation() {
         prices = {}; fx = { rate: null, ts: null, cached: false };
         spy = { price: null, prevClose: null, dayChangePct: null, dayChangeAbs: null, ts: null, cached: false };
         sessionHigh = null; lastRefresh = null;
+        dcaCalcState = { budget: null, mode: 'Normal', dipTicker: null, result: null };
+        dcaAllocationQueue = [];
+        trimInitiateState = {};
+        reviewDraft = { thesisChanged: null, thesisNotes: '', newPositions: '' };
+        actionLogFilters = { tickers: [], dateFrom: '', dateTo: '', actionType: 'all', sortDir: 'desc' };
+        newsState = { holdings: [], macro: [], lastRefresh: null, filter: 'all' };
         renderAll();
         toast('All data reset to defaults', 'success');
         break;
       }
+      case 'calc-dca-allocation': {
+        const budgetEl = document.getElementById('dca-calc-budget');
+        const modeEl = document.getElementById('dca-calc-mode');
+        const dipEl = document.getElementById('dca-calc-dip-ticker');
+        dcaCalcState.budget = budgetEl ? (parseFloat(budgetEl.value) || 0) : dcaCalcState.budget;
+        dcaCalcState.mode = modeEl ? modeEl.value : dcaCalcState.mode;
+        dcaCalcState.dipTicker = dipEl ? dipEl.value : dcaCalcState.dipTicker;
+        dcaCalcState.result = calculateDcaAllocation(dcaCalcState.budget, dcaCalcState.mode, dcaCalcState.dipTicker);
+        renderAll();
+        break;
+      }
+      case 'log-dca-allocation': {
+        if (!dcaCalcState.result || !dcaCalcState.result.allocations.length) break;
+        dcaAllocationQueue = dcaCalcState.result.allocations.slice();
+        const next = dcaAllocationQueue.shift();
+        openDcaModal(null, next);
+        break;
+      }
+      case 'toggle-trim-initiate':
+        trimInitiateState[target.dataset.ticker] = !trimInitiateState[target.dataset.ticker];
+        renderAll();
+        break;
+      case 'set-thesis-changed':
+        reviewDraft.thesisChanged = target.dataset.val === 'true';
+        renderAll();
+        break;
+      case 'save-review-notes': {
+        const notesEl = document.getElementById('review-thesis-notes');
+        const newPosEl = document.getElementById('review-new-positions');
+        if (notesEl) reviewDraft.thesisNotes = notesEl.value;
+        if (newPosEl) reviewDraft.newPositions = newPosEl.value;
+        appData.reviewHistory = appData.reviewHistory || [];
+        appData.reviewHistory.push({
+          id: genId(), timestamp: Date.now(), half: getCurrentHalfLabel(),
+          thesisChanged: reviewDraft.thesisChanged, thesisNotes: reviewDraft.thesisNotes,
+          newPositions: reviewDraft.newPositions
+        });
+        persistDataCache();
+        debouncedSaveToGist();
+        toast('Review notes saved', 'success');
+        break;
+      }
+      case 'apply-log-filters': {
+        const tickerSel = document.getElementById('log-filter-tickers');
+        actionLogFilters.tickers = tickerSel ? Array.from(tickerSel.selectedOptions).map(o => o.value) : [];
+        actionLogFilters.dateFrom = document.getElementById('log-filter-from').value;
+        actionLogFilters.dateTo = document.getElementById('log-filter-to').value;
+        actionLogFilters.actionType = document.getElementById('log-filter-type').value;
+        renderAll();
+        break;
+      }
+      case 'clear-log-filters':
+        actionLogFilters = { tickers: [], dateFrom: '', dateTo: '', actionType: 'all', sortDir: actionLogFilters.sortDir };
+        renderAll();
+        break;
+      case 'toggle-log-sort':
+        actionLogFilters.sortDir = actionLogFilters.sortDir === 'desc' ? 'asc' : 'desc';
+        renderAll();
+        break;
+      case 'export-log-csv': {
+        const enriched = computeActionLogEnriched();
+        const headers = ['Date', 'Ticker', 'Tier', 'Action Type', 'Shares', 'Price USD', 'Total USD', 'Total THB', 'Avg Cost Before', 'Avg Cost After', 'Cost Basis Delta %', 'Trigger', 'Notes'];
+        const csvRows = [headers.join(',')];
+        enriched.forEach(x => {
+          const en = x.entry;
+          const totalUSDRow = (Number(en.shares) || 0) * (Number(en.price) || 0);
+          const row = [en.date, en.ticker, x.tier, x.type, en.shares, en.price, totalUSDRow.toFixed(2), en.totalTHB,
+            x.avgCostBefore.toFixed(4), x.avgCostAfter.toFixed(4), x.costBasisDeltaPct === null ? '' : x.costBasisDeltaPct.toFixed(2),
+            en.reason, (en.notes || '').replace(/"/g, '""')];
+          csvRows.push(row.map(v => `"${String(v)}"`).join(','));
+        });
+        const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'porthos-action-log-' + todayISO() + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        break;
+      }
+      case 'save-to-drive':
+        await saveToGoogleDrive();
+        break;
+      case 'open-add-note': openAddNoteModal(); break;
+      case 'confirm-add-note': confirmAddNote(); break;
+      case 'delete-note': deleteNote(target.dataset.noteId); break;
+      case 'refresh-news':
+        target.disabled = true;
+        await refreshNewsData();
+        target.disabled = false;
+        break;
+      case 'filter-news':
+        newsState.filter = target.dataset.filter;
+        renderAll();
+        break;
+      case 'save-gdrive-settings':
+        apiConfig.googleDriveClientId = document.getElementById('input-gdrive-client-id').value.trim();
+        saveApiConfigToStorage();
+        toast('Integration settings saved', 'success');
+        break;
     }
   });
 
@@ -1542,6 +2596,11 @@ function attachEventDelegation() {
       }
       return;
     }
+    if (e.target.id === 'dca-calc-budget') { dcaCalcState.budget = parseFloat(e.target.value) || 0; return; }
+    if (e.target.id === 'dca-calc-mode') { dcaCalcState.mode = e.target.value; dcaCalcState.result = null; renderAll(); return; }
+    if (e.target.id === 'dca-calc-dip-ticker') { dcaCalcState.dipTicker = e.target.value; return; }
+    if (e.target.id === 'review-thesis-notes') { reviewDraft.thesisNotes = e.target.value; return; }
+    if (e.target.id === 'review-new-positions') { reviewDraft.newPositions = e.target.value; return; }
     if (e.target.id === 'import-json-input') {
       const file = e.target.files[0];
       if (!file) return;
@@ -1553,6 +2612,7 @@ function attachEventDelegation() {
           appData.dcaSchedule = parsed.dcaSchedule || JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE));
           appData.actionLog = parsed.actionLog || [];
           appData.notes = parsed.notes || [];
+          appData.reviewHistory = parsed.reviewHistory || [];
           appData.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), parsed.settings || {});
           appData.positions.forEach(ensurePositionBase);
           ensureLogIds();
@@ -1575,6 +2635,7 @@ function attachEventDelegation() {
 async function init() {
   loadApiConfigFromStorage();
   loadCacheFromStorage();
+  loadNewsCache();
   attachEventDelegation();
   renderAll(); // paint immediately with cached/default data (works offline)
 
