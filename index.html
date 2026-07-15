@@ -1,0 +1,1452 @@
+<!-- PORTHOS v1.0 — Phase 1 — Dashboard, Portfolio, Settings -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PORTHOS — Portfolio Orchestration &amp; Rebalancing Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root{
+  --bg:#0f1117;
+  --card:#1a1d27;
+  --card-border:#2a2d3a;
+  --accent:#4f8ef7;
+  --success:#1db954;
+  --warning:#f59e0b;
+  --danger:#ef4444;
+  --text:#f0f0f0;
+  --text-secondary:#9ca3af;
+  --text-muted:#6b7280;
+  --core:#4f8ef7;
+  --growth:#1db954;
+  --moonshot:#f59e0b;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:60px;
+}
+a{color:var(--accent);}
+button{font-family:inherit;}
+input,select,textarea{font-family:inherit;}
+
+/* ============================================================
+   LAYOUT — BANNER, TAB BAR
+   ============================================================ */
+#banner-container{position:sticky;top:0;z-index:40;}
+.banner-warning{
+  background:#3a2f10;
+  color:var(--warning);
+  border-bottom:1px solid var(--warning);
+  padding:10px 16px;
+  font-size:13px;
+  text-align:center;
+}
+.tabbar{
+  position:sticky;top:0;z-index:30;
+  display:flex;overflow-x:auto;white-space:nowrap;
+  background:#12141c;
+  border-bottom:1px solid var(--card-border);
+  padding:0 8px;
+  scrollbar-width:thin;
+}
+.tab-btn{
+  background:transparent;border:none;color:var(--text-secondary);
+  padding:14px 16px;font-size:13px;font-weight:600;cursor:pointer;
+  border-bottom:2px solid transparent;transition:color .15s,border-color .15s;
+  flex-shrink:0;
+}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.active{color:var(--text);border-bottom-color:var(--accent);}
+
+#content{max-width:1200px;margin:0 auto;padding:20px 16px 40px;}
+
+/* ============================================================
+   PRIMITIVES — CARDS, GRIDS, BADGES, PILLS
+   ============================================================ */
+.grid{display:grid;gap:14px;}
+.grid-4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
+.card{
+  background:var(--card);
+  border:1px solid var(--card-border);
+  border-radius:12px;
+  padding:18px;
+}
+.card.highlight{border:1.5px solid var(--accent);}
+.card+.card{margin-top:14px;}
+.section-header{
+  text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
+  font-size:11px;font-weight:600;margin:0 0 10px;
+}
+.metric-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
+.metric-value{font-size:22px;font-weight:700;color:var(--text);}
+.metric-sub{font-size:12px;color:var(--text-secondary);margin-top:4px;}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;}
+.badge-success{background:var(--success);}
+.badge-warning{background:var(--warning);color:#1a1408;}
+.badge-danger{background:var(--danger);}
+.badge-accent{background:var(--accent);}
+.badge-muted{background:#3a3d4a;color:var(--text-secondary);}
+
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;}
+.pill-Core{background:rgba(79,142,247,.18);color:var(--core);}
+.pill-Growth{background:rgba(29,185,84,.18);color:var(--growth);}
+.pill-Moonshot{background:rgba(245,158,11,.18);color:var(--moonshot);}
+
+.text-success{color:var(--success);}
+.text-danger{color:var(--danger);}
+.text-warning{color:var(--warning);}
+.text-muted{color:var(--text-muted);}
+.text-secondary{color:var(--text-secondary);}
+
+.alert-box{
+  border-left:2px solid var(--card-border);
+  background:rgba(255,255,255,.02);
+  padding:10px 14px;border-radius:6px;font-size:13px;
+  margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.alert-success{border-left-color:var(--success);background:rgba(29,185,84,.08);color:var(--success);}
+.alert-warning{border-left-color:var(--warning);background:rgba(245,158,11,.08);color:var(--warning);}
+.alert-danger{border-left-color:var(--danger);background:rgba(239,68,68,.08);color:var(--danger);}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn{
+  background:#252836;border:1px solid var(--card-border);color:var(--text);
+  padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;
+  cursor:pointer;transition:background .15s,border-color .15s;
+}
+.btn:hover{background:#2f3345;}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn-primary:hover{background:#3f7de0;}
+.btn-danger{background:transparent;border-color:var(--danger);color:var(--danger);}
+.btn-danger:hover{background:rgba(239,68,68,.1);}
+.btn-block{width:100%;}
+.btn-lg{padding:14px 20px;font-size:15px;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+
+/* ============================================================
+   FORMS
+   ============================================================ */
+.form-group{margin-bottom:14px;}
+.form-label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
+.form-input,.form-select,.form-textarea{
+  width:100%;background:#12141c;border:1px solid var(--card-border);color:var(--text);
+  padding:9px 12px;border-radius:8px;font-size:13px;outline:none;
+}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);}
+.form-textarea{resize:vertical;min-height:60px;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.form-inline{display:flex;align-items:center;gap:8px;}
+.form-inline .form-input{width:auto;}
+.inline-result{font-size:12px;margin-top:8px;}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px;}
+th{
+  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--card-border);
+  white-space:nowrap;
+}
+td{padding:10px;border-bottom:1px solid var(--card-border);white-space:nowrap;}
+tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:rgba(255,255,255,.02);}
+.ticker-cell{font-weight:700;}
+.row-highlight{background:rgba(29,185,84,.06);}
+
+/* ============================================================
+   PROGRESS BARS
+   ============================================================ */
+.progress-track{position:relative;background:#12141c;border-radius:999px;height:10px;overflow:visible;margin:14px 0 6px;}
+.progress-fill{background:var(--accent);height:100%;border-radius:999px;transition:width .8s ease;}
+.progress-milestone{position:absolute;top:-4px;width:2px;height:18px;background:var(--card-border);}
+.progress-milestone span{position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--text-muted);}
+.mini-bar-track{position:relative;background:#12141c;border-radius:4px;height:8px;margin-top:6px;}
+.mini-bar-fill{height:100%;border-radius:4px;}
+.mini-bar-target{position:absolute;top:-3px;width:2px;height:14px;background:#fff;}
+
+/* ============================================================
+   SKELETON LOADING
+   ============================================================ */
+.skeleton{
+  display:inline-block;background:linear-gradient(90deg,#242732 25%,#2f3341 37%,#242732 63%);
+  background-size:400% 100%;animation:pulse 1.4s ease infinite;border-radius:4px;color:transparent!important;
+}
+@keyframes pulse{0%{background-position:100% 50%}100%{background-position:0 50%}}
+
+/* ============================================================
+   MODALS & TOASTS
+   ============================================================ */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;
+  z-index:100;padding:16px;
+}
+.modal{
+  background:var(--card);border:1px solid var(--card-border);border-radius:12px;
+  padding:22px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto;
+}
+.modal h3{margin:0 0 16px;font-size:16px;}
+#toast-container{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;}
+.toast{
+  background:var(--card);border:1px solid var(--card-border);border-left:3px solid var(--accent);
+  padding:12px 16px;border-radius:8px;font-size:13px;min-width:240px;max-width:340px;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);animation:slideIn .2s ease;
+}
+.toast.error{border-left-color:var(--danger);}
+.toast.success{border-left-color:var(--success);}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ============================================================
+   PLACEHOLDER TABS
+   ============================================================ */
+.placeholder-card{text-align:center;padding:60px 20px;}
+.placeholder-card h2{font-size:22px;margin:0 0 12px;}
+.placeholder-card .big{font-size:40px;margin-bottom:14px;}
+.placeholder-card p{color:var(--text-secondary);max-width:420px;margin:0 auto;}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width:640px){
+  .form-row{grid-template-columns:1fr;}
+  .metric-value{font-size:18px;}
+  #content{padding:14px 10px 40px;}
+}
+</style>
+</head>
+<body>
+
+<div id="banner-container"></div>
+<nav class="tabbar" id="tabbar">
+  <button class="tab-btn" data-tab="1">📊 Dashboard</button>
+  <button class="tab-btn" data-tab="2">📁 Portfolio</button>
+  <button class="tab-btn" data-tab="3">🎯 DCA Engine</button>
+  <button class="tab-btn" data-tab="4">⚖️ Rebalancing</button>
+  <button class="tab-btn" data-tab="5">📜 Action Log</button>
+  <button class="tab-btn" data-tab="6">🩺 Health Check</button>
+  <button class="tab-btn" data-tab="7">📰 Market News</button>
+  <button class="tab-btn" data-tab="8">⚙️ Settings</button>
+</nav>
+
+<main id="content"></main>
+<div id="modal-root"></div>
+<div id="toast-container"></div>
+
+<script>
+'use strict';
+/* ================================================================
+   1. STATE & CONSTANTS
+   ================================================================ */
+const GIST_FILENAME = 'porthos-data.json';
+const LS_KEYS = {
+  apiConfig: 'porthos_api_config',
+  cacheData: 'porthos_cache_data',
+  cachePrices: 'porthos_cache_prices',
+  cacheFx: 'porthos_cache_fx',
+  cacheSpy: 'porthos_cache_spy',
+  sessionHigh: 'porthos_session_high_spy'
+};
+
+const DEFAULT_SETTINGS = {
+  goalTHB: 15000000,
+  startDate: '2025-10-01',
+  targetDate: '2035-10-01',
+  cashBuffer: 20000,
+  fxAlert: 31.0,
+  cashUSD: 0,
+  cashTHB: 0,
+  driftThresholds: { Core: 3, Growth: 4, Moonshot: 5 },
+  convictionBonus: { Core: 2, Growth: 1, Moonshot: 0 }
+};
+
+const DEFAULT_DCA_SCHEDULE = {
+  '2026': 12000, '2027': 15000, '2028': 18000, '2029': 21000, '2030': 24000,
+  '2031': 27000, '2032': 30000, '2033': 33000, '2034': 36000, '2035': 39000
+};
+
+const DEFAULT_POSITIONS = [
+  { ticker: 'NVDA', tier: 'Core', shares: 2.08, avgCost: 169.7, targetWeight: 12 },
+  { ticker: 'GOOGL', tier: 'Core', shares: 0, avgCost: 0, targetWeight: 8 },
+  { ticker: 'MSFT', tier: 'Core', shares: 1.29, avgCost: 433.3, targetWeight: 8 },
+  { ticker: 'AMZN', tier: 'Core', shares: 1.21, avgCost: 217.6, targetWeight: 8 },
+  { ticker: 'TSM', tier: 'Core', shares: 0.39, avgCost: 334.0, targetWeight: 8 },
+  { ticker: 'META', tier: 'Core', shares: 0, avgCost: 0, targetWeight: 7 },
+  { ticker: 'LLY', tier: 'Core', shares: 0.22, avgCost: 917.1, targetWeight: 6 },
+  { ticker: 'ALAB', tier: 'Growth', shares: 0.98, avgCost: 140.5, targetWeight: 8 },
+  { ticker: 'PLTR', tier: 'Growth', shares: 1.31, avgCost: 194.7, targetWeight: 8 },
+  { ticker: 'CRWD', tier: 'Growth', shares: 0.54, avgCost: 440.1, targetWeight: 6 },
+  { ticker: 'CEG', tier: 'Growth', shares: 0.31, avgCost: 286.2, targetWeight: 5 },
+  { ticker: 'ASTS', tier: 'Moonshot', shares: 0.60, avgCost: 76.5, targetWeight: 5 },
+  { ticker: 'IONQ', tier: 'Moonshot', shares: 4.15, avgCost: 207.0, targetWeight: 5 }
+];
+
+// Main app data — this whole object (minus runtime fields) is what gets saved to the Gist.
+let appData = {
+  positions: [],
+  dcaSchedule: JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE)),
+  actionLog: [],
+  notes: [],
+  settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
+};
+
+// API keys — localStorage ONLY, never written to the Gist.
+let apiConfig = { finnhubKey: '', githubPat: '', gistId: '', discordWebhook: '' };
+
+// Runtime / market data (not persisted to Gist).
+let prices = {};           // ticker -> {price, prevClose, dayChangePct, dayChangeAbs, ts, cached}
+let fx = { rate: null, ts: null, cached: false };
+let spy = { price: null, prevClose: null, dayChangePct: null, dayChangeAbs: null, ts: null, cached: false };
+let sessionHigh = null;    // { price, since }
+let lastRefresh = null;
+let currentTab = 1;
+let isLoadingPrices = false;
+let gistConfigured = false;
+
+/* ================================================================
+   2. UTILITIES
+   ================================================================ */
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function fmtUSD(n, dec = 2) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function fmtTHB(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '฿' + Math.round(Number(n)).toLocaleString('en-US');
+}
+function fmtPct(n, dec = 2) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  const s = Number(n).toFixed(dec);
+  return (n > 0 ? '+' : '') + s + '%';
+}
+function fmtNum(n, dec = 2) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+function ymDiff(d1, d2) {
+  // Non-negative years/months between d1 and d2 (d2 >= d1 assumed; clamps otherwise).
+  if (d2 < d1) return { years: 0, months: 0 };
+  let years = d2.getFullYear() - d1.getFullYear();
+  let months = d2.getMonth() - d1.getMonth();
+  if (d2.getDate() < d1.getDate()) months -= 1;
+  if (months < 0) { years -= 1; months += 12; }
+  if (years < 0) { years = 0; months = 0; }
+  return { years, months };
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+function toast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
+  el.textContent = message;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+function animateValue(el, endValue, formatter, duration = 700) {
+  if (!el) return;
+  const start = performance.now();
+  const startValue = 0;
+  function step(now) {
+    const p = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const current = startValue + (endValue - startValue) * eased;
+    el.textContent = formatter(current);
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = formatter(endValue);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ================================================================
+   3. PERSISTENCE — localStorage + GitHub Gist
+   ================================================================ */
+function loadApiConfigFromStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEYS.apiConfig);
+    if (raw) apiConfig = Object.assign(apiConfig, JSON.parse(raw));
+  } catch (e) { /* ignore corrupt storage */ }
+  gistConfigured = !!(apiConfig.githubPat && apiConfig.gistId);
+}
+function saveApiConfigToStorage() {
+  localStorage.setItem(LS_KEYS.apiConfig, JSON.stringify(apiConfig));
+  gistConfigured = !!(apiConfig.githubPat && apiConfig.gistId);
+}
+
+function loadCacheFromStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEYS.cacheData);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      appData = Object.assign(appData, parsed);
+      appData.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), parsed.settings || {});
+    }
+  } catch (e) { /* ignore */ }
+  try {
+    const p = localStorage.getItem(LS_KEYS.cachePrices);
+    if (p) prices = JSON.parse(p);
+  } catch (e) { /* ignore */ }
+  try {
+    const f = localStorage.getItem(LS_KEYS.cacheFx);
+    if (f) fx = JSON.parse(f);
+  } catch (e) { /* ignore */ }
+  try {
+    const s = localStorage.getItem(LS_KEYS.cacheSpy);
+    if (s) spy = JSON.parse(s);
+  } catch (e) { /* ignore */ }
+  try {
+    const sh = localStorage.getItem(LS_KEYS.sessionHigh);
+    if (sh) sessionHigh = JSON.parse(sh);
+  } catch (e) { /* ignore */ }
+}
+
+function persistDataCache() {
+  localStorage.setItem(LS_KEYS.cacheData, JSON.stringify(appData));
+}
+function persistPricesCache() { localStorage.setItem(LS_KEYS.cachePrices, JSON.stringify(prices)); }
+function persistFxCache() { localStorage.setItem(LS_KEYS.cacheFx, JSON.stringify(fx)); }
+function persistSpyCache() { localStorage.setItem(LS_KEYS.cacheSpy, JSON.stringify(spy)); }
+function persistSessionHigh() { localStorage.setItem(LS_KEYS.sessionHigh, JSON.stringify(sessionHigh)); }
+
+async function gistGet(pat, gistId) {
+  const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
+    headers: { 'Authorization': 'token ' + pat, 'Accept': 'application/vnd.github+json' }
+  });
+  if (!res.ok) throw new Error('GitHub API ' + res.status + ': ' + res.statusText);
+  return res.json();
+}
+
+async function gistSave(pat, gistId, dataObj) {
+  const body = { files: {} };
+  body.files[GIST_FILENAME] = { content: JSON.stringify(dataObj, null, 2) };
+  const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
+    method: 'PATCH',
+    headers: {
+      'Authorization': 'token ' + pat,
+      'Accept': 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('GitHub API ' + res.status + ': ' + res.statusText);
+  return res.json();
+}
+
+async function tryLoadFromGist(silent = false) {
+  if (!gistConfigured) return false;
+  try {
+    const gist = await gistGet(apiConfig.githubPat, apiConfig.gistId);
+    let file = gist.files && (gist.files[GIST_FILENAME] || Object.values(gist.files)[0]);
+    if (!file || !file.content) throw new Error('Gist has no readable file');
+    const parsed = JSON.parse(file.content);
+    appData.positions = parsed.positions || [];
+    appData.dcaSchedule = parsed.dcaSchedule || JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE));
+    appData.actionLog = parsed.actionLog || [];
+    appData.notes = parsed.notes || [];
+    appData.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), parsed.settings || {});
+    persistDataCache();
+    if (!silent) toast('Loaded latest data from Gist', 'success');
+    return true;
+  } catch (e) {
+    if (!silent) toast('Gist load failed — using cached data (' + e.message + ')', 'error');
+    return false;
+  }
+}
+
+async function trySaveToGist(silent = false) {
+  if (!gistConfigured) {
+    if (!silent) toast('Gist not configured — go to Settings', 'error');
+    return false;
+  }
+  try {
+    await gistSave(apiConfig.githubPat, apiConfig.gistId, appData);
+    persistDataCache();
+    if (!silent) toast('Saved to Gist', 'success');
+    return true;
+  } catch (e) {
+    toast('Gist save failed: ' + e.message, 'error');
+    return false;
+  }
+}
+const debouncedSaveToGist = debounce(() => trySaveToGist(true), 1200);
+
+/* ================================================================
+   4. MARKET DATA — Finnhub quotes, FX rate, SPY proxy
+   ================================================================ */
+async function fetchFxRate() {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    if (!res.ok) throw new Error('FX API ' + res.status);
+    const data = await res.json();
+    if (!data.rates || !data.rates.THB) throw new Error('THB rate missing');
+    fx = { rate: data.rates.THB, ts: Date.now(), cached: false };
+    persistFxCache();
+  } catch (e) {
+    fx = Object.assign({}, fx, { cached: true });
+    toast('FX rate fetch failed — using cached rate', 'error');
+  }
+}
+
+async function fetchQuote(ticker) {
+  if (!apiConfig.finnhubKey) return null;
+  const url = 'https://finnhub.io/api/v1/quote?symbol=' + encodeURIComponent(ticker) + '&token=' + encodeURIComponent(apiConfig.finnhubKey);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Finnhub API ' + res.status);
+  const data = await res.json();
+  if (data.c === undefined) throw new Error('Malformed Finnhub response');
+  return data; // {c, h, l, o, pc, t}
+}
+
+async function fetchAllPrices() {
+  if (!apiConfig.finnhubKey) return;
+  isLoadingPrices = true;
+  const tickers = appData.positions.map(p => p.ticker);
+  for (const ticker of tickers) {
+    try {
+      const q = await fetchQuote(ticker);
+      if (q) {
+        prices[ticker] = {
+          price: q.c, prevClose: q.pc,
+          dayChangeAbs: q.c - q.pc,
+          dayChangePct: q.pc ? ((q.c - q.pc) / q.pc) * 100 : 0,
+          ts: Date.now(), cached: false
+        };
+      }
+    } catch (e) {
+      if (prices[ticker]) prices[ticker] = Object.assign({}, prices[ticker], { cached: true });
+    }
+    await sleep(100); // rate-limit friendliness
+  }
+  persistPricesCache();
+  isLoadingPrices = false;
+}
+
+async function fetchSpyData() {
+  if (!apiConfig.finnhubKey) return;
+  try {
+    const q = await fetchQuote('SPY');
+    spy = {
+      price: q.c, prevClose: q.pc,
+      dayChangeAbs: q.c - q.pc,
+      dayChangePct: q.pc ? ((q.c - q.pc) / q.pc) * 100 : 0,
+      ts: Date.now(), cached: false
+    };
+    persistSpyCache();
+    // Session/local "52-week high" tracking — Finnhub free tier has no true 52wk-high field,
+    // so we track the highest price this app has ever observed, persisted across sessions.
+    if (!sessionHigh || q.c > sessionHigh.price) {
+      sessionHigh = { price: q.c, since: sessionHigh ? sessionHigh.since : todayISO() };
+      persistSessionHigh();
+    }
+  } catch (e) {
+    spy = Object.assign({}, spy, { cached: true });
+  }
+}
+
+async function refreshAllMarketData() {
+  await fetchFxRate();
+  await fetchSpyData();
+  await fetchAllPrices();
+  lastRefresh = Date.now();
+  renderAll();
+}
+
+/* ================================================================
+   5. CALCULATIONS
+   ================================================================ */
+function getPrice(ticker) {
+  return prices[ticker] ? prices[ticker].price : null;
+}
+
+function computeCashTotals() {
+  const cashUSD = Number(appData.settings.cashUSD) || 0;
+  const cashTHB = Number(appData.settings.cashTHB) || 0;
+  const rate = fx.rate || 0;
+  const cashTotalUSD = cashUSD + (rate ? cashTHB / rate : 0);
+  const cashTotalTHB = cashTHB + (cashUSD * rate);
+  return { cashUSD, cashTHB, cashTotalUSD, cashTotalTHB };
+}
+
+function computePortfolioMetrics() {
+  const rate = fx.rate || 0;
+  let totalValueUSD = 0, totalCostUSD = 0;
+  const tierValue = { Core: 0, Growth: 0, Moonshot: 0 };
+  const rows = appData.positions.map(pos => {
+    const price = getPrice(pos.ticker);
+    // When no live/cached price exists yet, fall back to cost basis for aggregate math
+    // so an unfetched price reads as "unknown" rather than a false -100% loss.
+    const effectivePrice = price !== null ? price : pos.avgCost;
+    const value = pos.shares * effectivePrice;
+    const cost = pos.shares * pos.avgCost;
+    totalValueUSD += value;
+    totalCostUSD += cost;
+    if (tierValue[pos.tier] !== undefined) tierValue[pos.tier] += value;
+    return { pos, price, value, cost };
+  });
+  const { cashTotalUSD } = computeCashTotals();
+  const grandTotalUSD = totalValueUSD + cashTotalUSD;
+
+  rows.forEach(r => {
+    r.currentWeight = grandTotalUSD > 0 ? (r.value / grandTotalUSD) * 100 : 0;
+    r.plPct = r.cost > 0 ? ((r.value - r.cost) / r.cost) * 100 : null;
+    r.drift = r.currentWeight - r.pos.targetWeight; // + overweight, - underweight
+    const threshold = (appData.settings.driftThresholds && appData.settings.driftThresholds[r.pos.tier] !== undefined)
+      ? appData.settings.driftThresholds[r.pos.tier] : 4;
+    r.threshold = threshold;
+    const driftScore = (r.pos.targetWeight - r.currentWeight) * 10;
+    const convictionBonus = (appData.settings.convictionBonus && appData.settings.convictionBonus[r.pos.tier] !== undefined)
+      ? appData.settings.convictionBonus[r.pos.tier] : 0;
+    let valuationBonus = 0;
+    if (r.pos.avgCost > 0 && r.price !== null) {
+      if (r.price < r.pos.avgCost * 0.9) valuationBonus = 2;
+      else if (r.price < r.pos.avgCost * 0.95) valuationBonus = 1;
+    }
+    r.driftScore = driftScore;
+    r.convictionBonus = convictionBonus;
+    r.valuationBonus = valuationBonus;
+    r.score = driftScore + convictionBonus + valuationBonus;
+    // Action badge — overweight-beyond-threshold (TRIM) takes priority since it is the
+    // most operationally urgent signal; remaining cases fall back on score sign.
+    if (r.drift > threshold) r.action = 'TRIM';
+    else if (r.score < 0) r.action = (Math.abs(r.drift) > threshold) ? 'DO_NOT_ADD' : 'HOLD';
+    else if (r.score > 0) r.action = 'BUY';
+    else r.action = 'HOLD';
+  });
+
+  return { rows, totalValueUSD, totalCostUSD, tierValue, grandTotalUSD, rate };
+}
+
+function actionBadgeHtml(action) {
+  const map = {
+    BUY: ['badge-success', '🟢 BUY'],
+    DO_NOT_ADD: ['badge-danger', '🔴 DO NOT ADD'],
+    TRIM: ['badge-warning', '🟡 TRIM'],
+    HOLD: ['badge-muted', '⚪ HOLD']
+  };
+  const [cls, label] = map[action] || map.HOLD;
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function getMonthlyDCA(year) {
+  const keys = Object.keys(appData.dcaSchedule).map(Number).sort((a, b) => a - b);
+  if (!keys.length) return 0;
+  if (year <= keys[0]) return appData.dcaSchedule[String(keys[0])];
+  if (year >= keys[keys.length - 1]) return appData.dcaSchedule[String(keys[keys.length - 1])];
+  return appData.dcaSchedule[String(year)] !== undefined ? appData.dcaSchedule[String(year)] : appData.dcaSchedule[String(keys[0])];
+}
+
+function computeGoalScenarios(currentValueTHB) {
+  const today = new Date();
+  const target = new Date(appData.settings.targetDate);
+  const monthsToTarget = Math.max(0, (target.getFullYear() - today.getFullYear()) * 12 + (target.getMonth() - today.getMonth()));
+  const pmtNow = getMonthlyDCA(today.getFullYear());
+  const scenarios = [20, 25, 30].map(cagrPct => {
+    const cagr = cagrPct / 100;
+    const r = Math.pow(1 + cagr, 1 / 12) - 1;
+    const growthFactor = Math.pow(1 + r, monthsToTarget);
+    const terminalValue = monthsToTarget > 0
+      ? currentValueTHB * growthFactor + pmtNow * ((growthFactor - 1) / r)
+      : currentValueTHB;
+
+    // Month-by-month simulation (stepped DCA schedule) to estimate the achievement year.
+    let value = currentValueTHB;
+    let d = new Date(today.getFullYear(), today.getMonth(), 1);
+    let goalYear = null;
+    for (let m = 0; m < 40 * 12; m++) {
+      const pmt = getMonthlyDCA(d.getFullYear());
+      value = value * (1 + r) + pmt;
+      d.setMonth(d.getMonth() + 1);
+      if (value >= appData.settings.goalTHB) { goalYear = d.getFullYear(); break; }
+    }
+    return { cagrPct, terminalValue, goalYear };
+  });
+  let earliestIdx = 0;
+  let earliestVal = Infinity;
+  scenarios.forEach((s, i) => {
+    const y = s.goalYear === null ? Infinity : s.goalYear;
+    if (y < earliestVal) { earliestVal = y; earliestIdx = i; }
+  });
+  scenarios.forEach((s, i) => s.isEarliest = (i === earliestIdx && s.goalYear !== null));
+  return scenarios;
+}
+
+function computeAlerts(metrics) {
+  const alerts = [];
+  // DCA fallback alert
+  const today = new Date();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  if (daysInMonth - today.getDate() < 5) {
+    const hasEntryThisMonth = appData.actionLog.some(e => {
+      const d = new Date(e.date);
+      return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+    });
+    if (!hasEntryThisMonth) {
+      alerts.push({ type: 'warning', html: '⚠ DCA fallback due this month — no deployment logged yet' });
+    }
+  }
+  // Drift alerts
+  metrics.rows.forEach(r => {
+    if (Math.abs(r.drift) > r.threshold) {
+      if (r.drift > 0) {
+        alerts.push({ type: 'warning', html: `<span class="badge badge-warning">${esc(r.pos.ticker)} ${fmtPct(r.drift, 1)} TRIM</span>` });
+      } else {
+        alerts.push({ type: 'accent', html: `<span class="badge badge-accent">${esc(r.pos.ticker)} ${fmtPct(r.drift, 1)} UNDERWEIGHT</span>` });
+      }
+    }
+  });
+  // FX alert
+  if (fx.rate && fx.rate < appData.settings.fxAlert) {
+    alerts.push({ type: 'danger', html: '⚠ USD/THB below ฿' + appData.settings.fxAlert.toFixed(2) + ' — review remittance plan' });
+  }
+  return alerts;
+}
+
+/* ================================================================
+   6. RENDERING — SHARED (banner, tabbar)
+   ================================================================ */
+function renderBanner() {
+  const el = document.getElementById('banner-container');
+  if (!gistConfigured) {
+    el.innerHTML = `<div class="banner-warning">⚠ Gist not configured — data won't persist across devices. Configure in Settings.</div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function renderTabbar() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.tab) === currentTab);
+  });
+}
+
+function renderAll() {
+  renderBanner();
+  renderTabbar();
+  const content = document.getElementById('content');
+  const renderers = {
+    1: renderDashboard, 2: renderPortfolio, 3: () => renderPlaceholder(3),
+    4: () => renderPlaceholder(4), 5: () => renderPlaceholder(5),
+    6: () => renderPlaceholder(6), 7: () => renderPlaceholder(7), 8: renderSettings
+  };
+  content.innerHTML = (renderers[currentTab] || renderDashboard)();
+  // Trigger number count-up animations after paint.
+  requestAnimationFrame(() => {
+    document.querySelectorAll('[data-animate-value]').forEach(el => {
+      const end = Number(el.dataset.animateValue);
+      const fmt = el.dataset.animateFormat;
+      const formatter = fmt === 'THB' ? fmtTHB : fmt === 'PCT' ? (v => fmtPct(v)) : (v => fmtUSD(v));
+      animateValue(el, end, formatter);
+    });
+  });
+}
+
+/* ================================================================
+   7. RENDERING — TAB 1: DASHBOARD
+   ================================================================ */
+function renderDashboard() {
+  const metrics = computePortfolioMetrics();
+  const { cashUSD, cashTHB, cashTotalTHB } = computeCashTotals();
+  const totalValueTHB = metrics.totalValueUSD * (fx.rate || 0);
+  const totalPlPct = metrics.totalCostUSD > 0 ? ((metrics.totalValueUSD - metrics.totalCostUSD) / metrics.totalCostUSD) * 100 : null;
+
+  let fxBadgeClass = 'badge-muted';
+  if (fx.rate) {
+    if (fx.rate > 31) fxBadgeClass = 'badge-success';
+    else if (fx.rate >= 30) fxBadgeClass = 'badge-warning';
+    else fxBadgeClass = 'badge-danger';
+  }
+
+  // --- Row 2: Investment Horizon ---
+  const start = new Date(appData.settings.startDate);
+  const target = new Date(appData.settings.targetDate);
+  const today = new Date();
+  const totalSpan = target - start;
+  const elapsedSpan = today - start;
+  const pctElapsed = totalSpan > 0 ? Math.min(100, Math.max(0, (elapsedSpan / totalSpan) * 100)) : 0;
+  const elapsed = ymDiff(start, today < target ? today : target);
+  const remaining = ymDiff(today > start ? today : start, target);
+
+  // --- Row 3: Goal Progress ---
+  const pctGoal = appData.settings.goalTHB > 0 ? Math.min(100, Math.max(0, (totalValueTHB / appData.settings.goalTHB) * 100)) : 0;
+  const scenarios = computeGoalScenarios(totalValueTHB);
+
+  // --- Row 4: Alerts ---
+  const alerts = computeAlerts(metrics);
+
+  // --- Row 5: Market Snapshot ---
+  const spyDrawdown = (sessionHigh && sessionHigh.price) ? ((spy.price - sessionHigh.price) / sessionHigh.price) * 100 : null;
+
+  return `
+  <div class="grid grid-4">
+    <div class="card">
+      <div class="metric-label">Total Portfolio Value</div>
+      <div class="metric-value" data-animate-value="${totalValueTHB}" data-animate-format="THB">${fmtTHB(totalValueTHB)}</div>
+      <div class="metric-sub">${fmtUSD(metrics.totalValueUSD)}</div>
+    </div>
+    <div class="card">
+      <div class="metric-label">Total P/L %</div>
+      <div class="metric-value ${totalPlPct === null ? '' : (totalPlPct >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPct)}</div>
+      <div class="metric-sub">${fmtUSD(metrics.totalValueUSD - metrics.totalCostUSD)} vs cost basis</div>
+    </div>
+    <div class="card">
+      <div class="metric-label">Cash</div>
+      <div class="metric-value">${fmtTHB(cashTotalTHB)}</div>
+      <div class="metric-sub">${fmtUSD(cashUSD)} · ${fmtTHB(cashTHB)}</div>
+    </div>
+    <div class="card">
+      <div class="metric-label">USD/THB Rate</div>
+      <div class="metric-value">${fx.rate ? fx.rate.toFixed(2) : '—'} <span class="badge ${fxBadgeClass}">${fx.rate ? (fx.rate > 31 ? 'STRONG' : fx.rate >= 30 ? 'WATCH' : 'WEAK') : 'N/A'}</span></div>
+      <div class="metric-sub">Cross-check Dime! app for transactions${fx.cached ? ' · (cached)' : ''}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">Investment Horizon</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Start Date</label>
+        <input type="date" class="form-input" data-setting="startDate" value="${esc(appData.settings.startDate)}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Date</label>
+        <input type="date" class="form-input" data-setting="targetDate" value="${esc(appData.settings.targetDate)}">
+      </div>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" style="width:${pctElapsed}%"></div>
+      <div class="progress-milestone" style="left:25%"><span>25%</span></div>
+      <div class="progress-milestone" style="left:50%"><span>50%</span></div>
+      <div class="progress-milestone" style="left:75%"><span>75%</span></div>
+    </div>
+    <div class="metric-sub" style="margin-top:14px;">${elapsed.years}y ${elapsed.months}m elapsed · ${remaining.years}y ${remaining.months}m remaining (${pctElapsed.toFixed(1)}%)</div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">Goal Progress</div>
+    <div class="metric-value">${fmtTHB(totalValueTHB)} <span class="text-muted" style="font-size:13px;font-weight:400;">/ ${fmtTHB(appData.settings.goalTHB)}</span></div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pctGoal}%;background:var(--success);"></div></div>
+    <div class="metric-sub" style="margin-bottom:14px;">${pctGoal.toFixed(1)}% of goal reached</div>
+    <div class="table-wrap">
+      <table style="min-width:520px;">
+        <thead><tr><th>CAGR Scenario</th><th>Projected Terminal Value (@ target date)</th><th>Est. Goal Year</th></tr></thead>
+        <tbody>
+          ${scenarios.map(s => `
+            <tr class="${s.isEarliest ? 'row-highlight' : ''}">
+              <td>${s.cagrPct}% CAGR</td>
+              <td>${fmtTHB(s.terminalValue)}</td>
+              <td class="${s.isEarliest ? 'text-success' : ''}">${s.goalYear ? s.goalYear : '> 40yr'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">Active Alerts</div>
+    ${alerts.length === 0
+      ? '<div class="alert-box alert-success">✓ All systems nominal</div>'
+      : alerts.map(a => `<div class="alert-box alert-${a.type === 'accent' ? 'warning' : a.type}">${a.html}</div>`).join('')}
+  </div>
+
+  <div class="card">
+    <div class="section-header">Market Snapshot</div>
+    <div class="grid grid-4">
+      <div>
+        <div class="metric-label">SPY Price</div>
+        <div class="metric-value">${spy.price ? fmtUSD(spy.price) : '—'}${spy.cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''}</div>
+      </div>
+      <div>
+        <div class="metric-label">Day Change</div>
+        <div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)} (${fmtUSD(spy.dayChangeAbs)})</div>
+      </div>
+      <div>
+        <div class="metric-label">Drawdown from Session High</div>
+        <div class="metric-value" style="font-size:16px;">${spyDrawdown !== null ? fmtPct(spyDrawdown) : '—'}</div>
+        <div class="metric-sub">52-week high tracking builds over time</div>
+      </div>
+      <div>
+        <div class="metric-label">Last Refresh</div>
+        <div class="metric-value" style="font-size:14px;">${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : 'never'}</div>
+      </div>
+    </div>
+    <div class="btn-row"><button class="btn" data-action="refresh-market">🔄 Refresh</button></div>
+  </div>
+
+  <div class="card" style="text-align:center;">
+    <button class="btn btn-primary btn-lg" data-action="open-dca-modal">＋ Log a DCA</button>
+  </div>
+  `;
+}
+
+/* ================================================================
+   8. RENDERING — TAB 2: PORTFOLIO
+   ================================================================ */
+function renderPortfolio() {
+  const metrics = computePortfolioMetrics();
+  const totalInvestedUSD = metrics.totalCostUSD;
+  const totalInvestedTHB = totalInvestedUSD * (fx.rate || 0);
+  const totalPlPct = totalInvestedUSD > 0 ? ((metrics.totalValueUSD - totalInvestedUSD) / totalInvestedUSD) * 100 : null;
+  const totalPlAbs = metrics.totalValueUSD - totalInvestedUSD;
+
+  const tierTargets = { Core: 57, Growth: 27, Moonshot: 10 };
+  const tierColors = { Core: 'var(--core)', Growth: 'var(--growth)', Moonshot: 'var(--moonshot)' };
+  const tierBars = ['Core', 'Growth', 'Moonshot'].map(tier => {
+    const actualPct = metrics.grandTotalUSD > 0 ? (metrics.tierValue[tier] / metrics.grandTotalUSD) * 100 : 0;
+    return `
+      <div style="flex:1;min-width:150px;">
+        <div class="metric-sub">${tier}: ${actualPct.toFixed(1)}% <span class="text-muted">(target ${tierTargets[tier]}%)</span></div>
+        <div class="mini-bar-track">
+          <div class="mini-bar-fill" style="width:${Math.min(100, actualPct)}%;background:${tierColors[tier]};"></div>
+          <div class="mini-bar-target" style="left:${Math.min(100, tierTargets[tier])}%;"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const rowsHtml = metrics.rows.map(r => {
+    const priceCell = !apiConfig.finnhubKey
+      ? '🔑 Add Finnhub API key in Settings'
+      : (r.price === null
+        ? (isLoadingPrices ? '<span class="skeleton">$000.00</span>' : '—')
+        : fmtUSD(r.price) + (prices[r.pos.ticker] && prices[r.pos.ticker].cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''));
+    const dayChg = prices[r.pos.ticker] ? prices[r.pos.ticker].dayChangePct : null;
+    const valueTHB = r.value * (fx.rate || 0);
+    const driftClass = Math.abs(r.drift) > r.threshold ? 'text-danger' : (Math.abs(r.drift) > r.threshold - 1 ? 'text-warning' : 'text-secondary');
+    return `
+    <tr>
+      <td class="ticker-cell">${esc(r.pos.ticker)}</td>
+      <td><span class="pill pill-${r.pos.tier}">${r.pos.tier}</span></td>
+      <td>${fmtNum(r.pos.shares, 4)}</td>
+      <td>${r.pos.avgCost ? fmtUSD(r.pos.avgCost) : '—'}</td>
+      <td>${priceCell}</td>
+      <td class="${dayChg === null ? '' : (dayChg >= 0 ? 'text-success' : 'text-danger')}">${dayChg === null ? '—' : fmtPct(dayChg)}</td>
+      <td>${fmtUSD(r.value)}</td>
+      <td>${fmtTHB(valueTHB)}</td>
+      <td class="${r.plPct === null ? '' : (r.plPct >= 0 ? 'text-success' : 'text-danger')}" style="font-weight:700;">${r.plPct === null ? '—' : fmtPct(r.plPct)}</td>
+      <td>${r.currentWeight.toFixed(1)}%</td>
+      <td>${r.pos.targetWeight}%</td>
+      <td class="${driftClass}">${fmtPct(r.drift, 1)}</td>
+      <td>${r.score.toFixed(1)}</td>
+      <td>${actionBadgeHtml(r.action)}</td>
+      <td><button class="btn btn-sm btn-danger" data-action="remove-position" data-ticker="${esc(r.pos.ticker)}">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div class="grid grid-4" style="margin-bottom:6px;">
+      <div>
+        <div class="metric-label">Total Invested</div>
+        <div class="metric-value" style="font-size:16px;">${fmtUSD(totalInvestedUSD)} <span class="text-muted">| ${fmtTHB(totalInvestedTHB)}</span></div>
+      </div>
+      <div>
+        <div class="metric-label">Total P/L</div>
+        <div class="metric-value ${totalPlPct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(totalPlPct)} (${fmtUSD(totalPlAbs)})</div>
+      </div>
+    </div>
+    <div class="section-header" style="margin-top:14px;">Tier Breakdown vs Target</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">${tierBars}</div>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th><th>Tier</th><th>Shares</th><th>Avg Cost $</th><th>Price $</th><th>Day Chg %</th>
+            <th>Value $</th><th>Value ฿</th><th>P/L %</th><th>Wt %</th><th>Target %</th><th>Drift</th><th>Score</th><th>Action</th><th></th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml || '<tr><td colspan="15" class="text-muted">No positions yet.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" data-action="open-add-position-modal">＋ Add Position</button>
+      <button class="btn" data-action="refresh-market">🔄 Refresh All Prices</button>
+      <span class="metric-sub" style="align-self:center;">Last updated: ${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : '—'}</span>
+    </div>
+  </div>
+  `;
+}
+
+/* ================================================================
+   9. RENDERING — TABS 3–7: PHASE 2 PLACEHOLDERS
+   ================================================================ */
+const PLACEHOLDER_INFO = {
+  3: { name: 'DCA Engine', desc: 'Monthly allocation calculator with Priority Score engine' },
+  4: { name: 'Rebalancing', desc: 'Drift monitor, trim planner, and market drawdown alerts' },
+  5: { name: 'Action Log', desc: 'Full investment history with filtering and Google Drive export' },
+  6: { name: 'Health Check', desc: 'Semi-annual review, goal scenarios, and FX impact analysis' },
+  7: { name: 'Market News', desc: "Finnhub news feed filtered to your holdings and macro events" }
+};
+function renderPlaceholder(tabNum) {
+  const info = PLACEHOLDER_INFO[tabNum];
+  return `
+  <div class="card placeholder-card">
+    <div class="big">🚧</div>
+    <h2>${esc(info.name)}</h2>
+    <p><strong>Coming in Phase 2</strong><br>${esc(info.desc)}</p>
+  </div>`;
+}
+
+/* ================================================================
+   10. RENDERING — TAB 8: SETTINGS
+   ================================================================ */
+function renderSettings() {
+  const dcaYears = Object.keys(appData.dcaSchedule).sort();
+  const dt = appData.settings.driftThresholds;
+  return `
+  <div class="card">
+    <div class="section-header">API Configuration</div>
+    <div class="form-group">
+      <label class="form-label">Finnhub API Key</label>
+      <input type="password" class="form-input" id="input-finnhub-key" value="${esc(apiConfig.finnhubKey)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">GitHub Personal Access Token</label>
+      <input type="password" class="form-input" id="input-github-pat" value="${esc(apiConfig.githubPat)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">GitHub Gist ID</label>
+      <input type="text" class="form-input" id="input-gist-id" value="${esc(apiConfig.gistId)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Discord Webhook URL (Phase 3 — alerts)</label>
+      <input type="password" class="form-input" id="input-discord-webhook" value="${esc(apiConfig.discordWebhook)}">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" data-action="save-api-settings">💾 Save API Settings</button>
+      <button class="btn" data-action="test-finnhub">🧪 Test Finnhub</button>
+      <button class="btn" data-action="test-gist">🧪 Test Gist</button>
+    </div>
+    <div class="inline-result" id="test-finnhub-result"></div>
+    <div class="inline-result" id="test-gist-result"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">Portfolio Configuration</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Investment Goal ฿</label>
+        <input type="number" class="form-input" data-setting="goalTHB" value="${appData.settings.goalTHB}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Min Cash Buffer ฿</label>
+        <input type="number" class="form-input" data-setting="cashBuffer" value="${appData.settings.cashBuffer}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Cash (USD)</label>
+        <input type="number" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cash (THB)</label>
+        <input type="number" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Start Date</label>
+        <input type="date" class="form-input" data-setting="startDate" value="${esc(appData.settings.startDate)}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Date</label>
+        <input type="date" class="form-input" data-setting="targetDate" value="${esc(appData.settings.targetDate)}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">FX Alert Threshold</label>
+      <input type="number" step="0.1" class="form-input" data-setting="fxAlert" value="${appData.settings.fxAlert}">
+    </div>
+
+    <div class="section-header" style="margin-top:18px;">DCA Step-Up Schedule (Monthly ฿)</div>
+    <div class="table-wrap">
+      <table style="min-width:300px;">
+        <thead><tr><th>Year</th><th>Monthly ฿ Amount</th></tr></thead>
+        <tbody>
+          ${dcaYears.map(y => `
+            <tr>
+              <td>${y}</td>
+              <td><input type="number" class="form-input" data-dca-year="${y}" value="${appData.dcaSchedule[y]}"></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-header" style="margin-top:18px;">Drift Thresholds (±%)</div>
+    <div class="form-row" style="grid-template-columns:repeat(3,1fr);">
+      <div class="form-group">
+        <label class="form-label">Core</label>
+        <input type="number" class="form-input" data-drift-tier="Core" value="${dt.Core}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Growth</label>
+        <input type="number" class="form-input" data-drift-tier="Growth" value="${dt.Growth}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Moonshot</label>
+        <input type="number" class="form-input" data-drift-tier="Moonshot" value="${dt.Moonshot}">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">Data Management</div>
+    <div class="btn-row">
+      <button class="btn" data-action="load-from-gist">☁ Load from Gist</button>
+      <button class="btn" data-action="save-to-gist">☁ Save to Gist</button>
+      <button class="btn" data-action="export-json">⬇ Export JSON Backup</button>
+      <button class="btn" data-action="trigger-import-json">⬆ Import JSON Backup</button>
+      <input type="file" id="import-json-input" accept="application/json" style="display:none;">
+      <button class="btn btn-danger" data-action="reset-all-data">🗑 Reset All Data</button>
+    </div>
+  </div>
+  `;
+}
+
+/* ================================================================
+   11. MODALS
+   ================================================================ */
+function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+function openDcaModal() {
+  const tickers = appData.positions.map(p => p.ticker);
+  const reasons = ['Dip trigger', 'Macro event', 'Fallback', 'Manual', 'Rebalancing trim', 'Rebalancing buy'];
+  document.getElementById('modal-root').innerHTML = `
+  <div class="modal-overlay" data-action="modal-overlay-close">
+    <div class="modal" data-action="noop">
+      <h3>＋ Log a DCA</h3>
+      <div class="form-group"><label class="form-label">Date</label>
+        <input type="date" class="form-input" id="dca-date" value="${todayISO()}"></div>
+      <div class="form-group"><label class="form-label">Ticker</label>
+        <select class="form-select" id="dca-ticker">${tickers.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Shares Bought</label>
+          <input type="number" step="any" class="form-input" id="dca-shares" value="0"></div>
+        <div class="form-group"><label class="form-label">Price/Share USD</label>
+          <input type="number" step="any" class="form-input" id="dca-price" value="0"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Total Amount ฿</label>
+        <input type="number" step="any" class="form-input" id="dca-thb" value="0"></div>
+      <div class="form-group"><label class="form-label">Trigger Reason</label>
+        <select class="form-select" id="dca-reason">${reasons.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Notes (optional)</label>
+        <textarea class="form-textarea" id="dca-notes"></textarea></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="confirm-dca">Confirm</button>
+        <button class="btn" data-action="modal-overlay-close">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+
+  let thbManuallyEdited = false;
+  const sharesEl = document.getElementById('dca-shares');
+  const priceEl = document.getElementById('dca-price');
+  const thbEl = document.getElementById('dca-thb');
+  function recalcThb() {
+    if (thbManuallyEdited) return;
+    const shares = parseFloat(sharesEl.value) || 0;
+    const price = parseFloat(priceEl.value) || 0;
+    const rate = fx.rate || 0;
+    thbEl.value = (shares * price * rate).toFixed(2);
+  }
+  sharesEl.addEventListener('input', recalcThb);
+  priceEl.addEventListener('input', recalcThb);
+  thbEl.addEventListener('input', () => { thbManuallyEdited = true; });
+}
+
+function confirmDca() {
+  const ticker = document.getElementById('dca-ticker').value;
+  const date = document.getElementById('dca-date').value;
+  const shares = parseFloat(document.getElementById('dca-shares').value) || 0;
+  const price = parseFloat(document.getElementById('dca-price').value) || 0;
+  const totalTHB = parseFloat(document.getElementById('dca-thb').value) || 0;
+  const reason = document.getElementById('dca-reason').value;
+  const notes = document.getElementById('dca-notes').value;
+
+  const pos = appData.positions.find(p => p.ticker === ticker);
+  if (!pos) { toast('Position not found — add it in Portfolio tab first', 'error'); return; }
+  const newShares = pos.shares + shares;
+  if (newShares > 0) {
+    pos.avgCost = ((pos.shares * pos.avgCost) + (shares * price)) / newShares;
+  }
+  pos.shares = newShares;
+
+  appData.actionLog.push({ date, ticker, shares, price, totalTHB, reason, notes, timestamp: Date.now() });
+  persistDataCache();
+  debouncedSaveToGist();
+  closeModal();
+  toast('DCA logged', 'success');
+  renderAll();
+}
+
+function openAddPositionModal() {
+  document.getElementById('modal-root').innerHTML = `
+  <div class="modal-overlay" data-action="modal-overlay-close">
+    <div class="modal" data-action="noop">
+      <h3>＋ Add Position</h3>
+      <div class="form-group"><label class="form-label">Ticker</label>
+        <input type="text" class="form-input" id="add-ticker" style="text-transform:uppercase;"></div>
+      <div class="form-group"><label class="form-label">Tier</label>
+        <select class="form-select" id="add-tier"><option>Core</option><option>Growth</option><option>Moonshot</option></select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Shares</label>
+          <input type="number" step="any" class="form-input" id="add-shares" value="0"></div>
+        <div class="form-group"><label class="form-label">Avg Cost USD</label>
+          <input type="number" step="any" class="form-input" id="add-avgcost" value="0"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Target Weight %</label>
+        <input type="number" step="any" class="form-input" id="add-target" value="0"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="confirm-add-position">Add</button>
+        <button class="btn" data-action="modal-overlay-close">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function confirmAddPosition() {
+  const ticker = document.getElementById('add-ticker').value.trim().toUpperCase();
+  if (!ticker) { toast('Ticker required', 'error'); return; }
+  if (appData.positions.some(p => p.ticker === ticker)) { toast('Position already exists', 'error'); return; }
+  const tier = document.getElementById('add-tier').value;
+  const shares = parseFloat(document.getElementById('add-shares').value) || 0;
+  const avgCost = parseFloat(document.getElementById('add-avgcost').value) || 0;
+  const targetWeight = parseFloat(document.getElementById('add-target').value) || 0;
+  appData.positions.push({ ticker, tier, shares, avgCost, targetWeight });
+  persistDataCache();
+  debouncedSaveToGist();
+  closeModal();
+  renderAll();
+  try {
+    const q = await fetchQuote(ticker);
+    if (q) {
+      prices[ticker] = { price: q.c, prevClose: q.pc, dayChangeAbs: q.c - q.pc, dayChangePct: q.pc ? ((q.c - q.pc) / q.pc) * 100 : 0, ts: Date.now(), cached: false };
+      persistPricesCache();
+    }
+  } catch (e) { /* price fetch best-effort */ }
+  renderAll();
+  toast('Position added', 'success');
+}
+
+function removePosition(ticker) {
+  if (!confirm('Remove ' + ticker + ' from your portfolio?')) return;
+  appData.positions = appData.positions.filter(p => p.ticker !== ticker);
+  delete prices[ticker];
+  persistDataCache();
+  persistPricesCache();
+  debouncedSaveToGist();
+  renderAll();
+  toast('Position removed', 'success');
+}
+
+/* ================================================================
+   12. EVENT DELEGATION
+   ================================================================ */
+function attachEventDelegation() {
+  document.getElementById('tabbar').addEventListener('click', e => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    currentTab = Number(btn.dataset.tab);
+    renderAll();
+  });
+
+  document.addEventListener('click', async e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    const action = target.dataset.action;
+    switch (action) {
+      case 'open-dca-modal': openDcaModal(); break;
+      case 'confirm-dca': confirmDca(); break;
+      case 'open-add-position-modal': openAddPositionModal(); break;
+      case 'confirm-add-position': confirmAddPosition(); break;
+      case 'modal-overlay-close': closeModal(); break;
+      case 'remove-position': removePosition(target.dataset.ticker); break;
+      case 'refresh-market':
+        target.disabled = true;
+        await refreshAllMarketData();
+        target.disabled = false;
+        break;
+      case 'save-api-settings': {
+        apiConfig.finnhubKey = document.getElementById('input-finnhub-key').value.trim();
+        apiConfig.githubPat = document.getElementById('input-github-pat').value.trim();
+        apiConfig.gistId = document.getElementById('input-gist-id').value.trim();
+        apiConfig.discordWebhook = document.getElementById('input-discord-webhook').value.trim();
+        saveApiConfigToStorage();
+        renderBanner();
+        toast('API settings saved', 'success');
+        break;
+      }
+      case 'test-finnhub': {
+        const key = document.getElementById('input-finnhub-key').value.trim();
+        const resultEl = document.getElementById('test-finnhub-result');
+        resultEl.textContent = 'Testing...';
+        try {
+          const res = await fetch('https://finnhub.io/api/v1/quote?symbol=NVDA&token=' + encodeURIComponent(key));
+          const data = await res.json();
+          if (!res.ok || data.c === undefined) throw new Error('Invalid response');
+          resultEl.innerHTML = `<span class="text-success">✓ NVDA price: ${fmtUSD(data.c)}</span>`;
+        } catch (err) {
+          resultEl.innerHTML = `<span class="text-danger">✗ ${esc(err.message)}</span>`;
+        }
+        break;
+      }
+      case 'test-gist': {
+        const pat = document.getElementById('input-github-pat').value.trim();
+        const gistId = document.getElementById('input-gist-id').value.trim();
+        const resultEl = document.getElementById('test-gist-result');
+        resultEl.textContent = 'Testing...';
+        try {
+          const gist = await gistGet(pat, gistId);
+          resultEl.innerHTML = `<span class="text-success">✓ Last modified: ${new Date(gist.updated_at).toLocaleString()}</span>`;
+        } catch (err) {
+          resultEl.innerHTML = `<span class="text-danger">✗ ${esc(err.message)}</span>`;
+        }
+        break;
+      }
+      case 'load-from-gist':
+        await tryLoadFromGist();
+        renderAll();
+        break;
+      case 'save-to-gist':
+        await trySaveToGist();
+        break;
+      case 'export-json': {
+        const blob = new Blob([JSON.stringify(appData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'porthos-backup-' + todayISO() + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        break;
+      }
+      case 'trigger-import-json':
+        document.getElementById('import-json-input').click();
+        break;
+      case 'reset-all-data': {
+        const typed = prompt('Type RESET to confirm clearing all local data:');
+        if (typed !== 'RESET') { toast('Reset cancelled', 'error'); break; }
+        localStorage.removeItem(LS_KEYS.apiConfig);
+        localStorage.removeItem(LS_KEYS.cacheData);
+        localStorage.removeItem(LS_KEYS.cachePrices);
+        localStorage.removeItem(LS_KEYS.cacheFx);
+        localStorage.removeItem(LS_KEYS.cacheSpy);
+        localStorage.removeItem(LS_KEYS.sessionHigh);
+        apiConfig = { finnhubKey: '', githubPat: '', gistId: '', discordWebhook: '' };
+        gistConfigured = false;
+        appData = {
+          positions: JSON.parse(JSON.stringify(DEFAULT_POSITIONS)),
+          dcaSchedule: JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE)),
+          actionLog: [], notes: [],
+          settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
+        };
+        prices = {}; fx = { rate: null, ts: null, cached: false };
+        spy = { price: null, prevClose: null, dayChangePct: null, dayChangeAbs: null, ts: null, cached: false };
+        sessionHigh = null; lastRefresh = null;
+        renderAll();
+        toast('All data reset to defaults', 'success');
+        break;
+      }
+    }
+  });
+
+  document.addEventListener('change', e => {
+    const settingInput = e.target.closest('[data-setting]');
+    if (settingInput) {
+      const key = settingInput.dataset.setting;
+      const isNumeric = settingInput.type === 'number';
+      appData.settings[key] = isNumeric ? parseFloat(settingInput.value) || 0 : settingInput.value;
+      persistDataCache();
+      debouncedSaveToGist();
+      if (['startDate', 'targetDate', 'cashUSD', 'cashTHB'].includes(key) && currentTab !== 8) renderAll();
+      return;
+    }
+    const dcaInput = e.target.closest('[data-dca-year]');
+    if (dcaInput) {
+      appData.dcaSchedule[dcaInput.dataset.dcaYear] = parseFloat(dcaInput.value) || 0;
+      persistDataCache();
+      debouncedSaveToGist();
+      return;
+    }
+    const driftInput = e.target.closest('[data-drift-tier]');
+    if (driftInput) {
+      appData.settings.driftThresholds[driftInput.dataset.driftTier] = parseFloat(driftInput.value) || 0;
+      persistDataCache();
+      debouncedSaveToGist();
+      return;
+    }
+    if (e.target.id === 'import-json-input') {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          appData.positions = parsed.positions || [];
+          appData.dcaSchedule = parsed.dcaSchedule || JSON.parse(JSON.stringify(DEFAULT_DCA_SCHEDULE));
+          appData.actionLog = parsed.actionLog || [];
+          appData.notes = parsed.notes || [];
+          appData.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), parsed.settings || {});
+          persistDataCache();
+          renderAll();
+          toast('Backup imported — click "Save to Gist" to persist remotely', 'success');
+        } catch (err) {
+          toast('Import failed: invalid JSON file', 'error');
+        }
+      };
+      reader.readAsText(file);
+    }
+  });
+}
+
+/* ================================================================
+   13. INIT
+   ================================================================ */
+async function init() {
+  loadApiConfigFromStorage();
+  loadCacheFromStorage();
+  attachEventDelegation();
+  renderAll(); // paint immediately with cached/default data (works offline)
+
+  await tryLoadFromGist(true);
+  if (appData.positions.length === 0) {
+    appData.positions = JSON.parse(JSON.stringify(DEFAULT_POSITIONS));
+    persistDataCache();
+  }
+  renderAll();
+
+  await refreshAllMarketData(); // fx, spy, prices — each independently try/catch-guarded
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
