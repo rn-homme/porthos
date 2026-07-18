@@ -2,32 +2,240 @@
 <!-- PORTHOS v2.0 — Phase 2 — DCA Log, Rebalancing, Action Log, Projection, Market News -->
 <!-- PORTHOS v2.1 — Buy planner, projection charts, editable CAGR, S&P 500 tracking, minimal icons -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-neutral="cool" data-primary="indigo">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PORTHOS — Portfolio Orchestration &amp; Rebalancing Tool</title>
+<script>
+// Applied synchronously, before CSS paints, so a stored theme preference
+// never flashes the data-theme="dark" default first.
+(function () {
+  try {
+    var raw = localStorage.getItem('porthos_theme_prefs');
+    if (!raw) return;
+    var prefs = JSON.parse(raw);
+    var root = document.documentElement;
+    if (prefs.theme) root.setAttribute('data-theme', prefs.theme);
+    if (prefs.neutral) root.setAttribute('data-neutral', prefs.neutral);
+    if (prefs.primary) root.setAttribute('data-primary', prefs.primary);
+  } catch (e) { /* ignore corrupt storage, keep markup defaults */ }
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ============================================================
-   DESIGN TOKENS
+   COLOR TOKENS — "Indigo Ledger" (multi-tone edition)
+   Verbatim from the supplied token file. Pick a neutral tone + a
+   primary family independently via data-theme / data-neutral /
+   data-primary on <html> (see Settings → Appearance).
+   ============================================================ */
+:root {
+  /* Neutrals — warm (beige-tinted) */
+  --neutral-warm-0:   #FDFCFB;
+  --neutral-warm-50:  #F7F5F2;
+  --neutral-warm-100: #EFEBE6;
+  --neutral-warm-200: #E2DCD4;
+  --neutral-warm-300: #CFC6BA;
+  --neutral-warm-400: #ADA192;
+  --neutral-warm-500: #8A7D6E;
+  --neutral-warm-600: #6B5F52;
+  --neutral-warm-700: #504639;
+  --neutral-warm-800: #362E25;
+  --neutral-warm-900: #211B15;
+  --neutral-warm-950: #16120D;
+
+  /* Neutrals — cool (blue-tinted) */
+  --neutral-cool-0:   #FCFCFD;
+  --neutral-cool-50:  #F5F6F8;
+  --neutral-cool-100: #EBEDF1;
+  --neutral-cool-200: #DBDFE6;
+  --neutral-cool-300: #C2C8D2;
+  --neutral-cool-400: #9CA3B0;
+  --neutral-cool-500: #7A8190;
+  --neutral-cool-600: #5F6673;
+  --neutral-cool-700: #464C57;
+  --neutral-cool-800: #2E323A;
+  --neutral-cool-900: #1B1E23;
+  --neutral-cool-950: #121417;
+
+  /* Primary — Indigo (deep navy) */
+  --indigo-100: #D7DEEC; --indigo-200: #AFC0D9; --indigo-300: #8098BF;
+  --indigo-400: #56719F; --indigo-500: #35507D; --indigo-600: #253C63;
+  --indigo-700: #1C2E4E; --indigo-800: #16233C; --indigo-900: #0F182A;
+
+  /* Primary — Clay (Anthropic-inspired burnt terracotta) */
+  --clay-100: #F5DDCE; --clay-200: #E9BB9E; --clay-300: #DE9E78;
+  --clay-400: #C97A4F; --clay-500: #B35F38; --clay-600: #954B2C;
+  --clay-700: #7A3C23; --clay-800: #5E2E1B; --clay-900: #401F12;
+
+  /* Primary — Forest (deep, elegant green) */
+  --forest-100: #D6E3D7; --forest-200: #AFC8B2; --forest-300: #83A888;
+  --forest-400: #5C8862; --forest-500: #436B49; --forest-600: #345439;
+  --forest-700: #2A422F; --forest-800: #203424; --forest-900: #16241A;
+
+  /* Primary — Burgundy (rich wine) */
+  --burgundy-100: #EAD3D6; --burgundy-200: #D2A3AA; --burgundy-300: #B87179;
+  --burgundy-400: #9C4A54; --burgundy-500: #7E3540; --burgundy-600: #642A33;
+  --burgundy-700: #4E212A; --burgundy-800: #391720; --burgundy-900: #250F15;
+
+  /* Primary — Slate Teal (cool, quiet alternative) */
+  --slate-100: #D2E2E2; --slate-200: #A6C5C5; --slate-300: #78A5A5;
+  --slate-400: #518686; --slate-500: #3B6B6B; --slate-600: #2E5555;
+  --slate-700: #234040; --slate-800: #1A2F2F; --slate-900: #111F1F;
+
+  /* Semantic hues (unaffected by neutral/primary choice) */
+  --success-500: #3F7A5C;
+  --warning-500: #C08A34;
+  --error-500:   #B3483F;
+  --info-500:    #3E7C7C;
+}
+
+/* NEUTRAL TONE × THEME — drives surfaces, borders, text */
+:root[data-neutral="warm"][data-theme="light"],
+:root:not([data-neutral])[data-theme="light"] {
+  --bg-canvas: var(--neutral-warm-0); --bg-surface: var(--neutral-warm-50); --bg-surface-raised: #FFFFFF;
+  --border-subtle: var(--neutral-warm-200); --border-default: var(--neutral-warm-300);
+  --text-primary: var(--neutral-warm-900); --text-secondary: var(--neutral-warm-700); --text-muted: var(--neutral-warm-500);
+  --text-on-primary: var(--neutral-warm-0);
+  color-scheme: light;
+}
+:root[data-neutral="warm"][data-theme="dark"] {
+  --bg-canvas: var(--neutral-warm-950); --bg-surface: var(--neutral-warm-900); --bg-surface-raised: #2A241C;
+  --border-subtle: var(--neutral-warm-800); --border-default: var(--neutral-warm-700);
+  --text-primary: var(--neutral-warm-50); --text-secondary: var(--neutral-warm-300); --text-muted: var(--neutral-warm-500);
+  --text-on-primary: var(--neutral-warm-0);
+  color-scheme: dark;
+}
+:root[data-neutral="cool"][data-theme="light"] {
+  --bg-canvas: var(--neutral-cool-0); --bg-surface: var(--neutral-cool-50); --bg-surface-raised: #FFFFFF;
+  --border-subtle: var(--neutral-cool-200); --border-default: var(--neutral-cool-300);
+  --text-primary: var(--neutral-cool-900); --text-secondary: var(--neutral-cool-700); --text-muted: var(--neutral-cool-500);
+  --text-on-primary: var(--neutral-cool-0);
+  color-scheme: light;
+}
+:root[data-neutral="cool"][data-theme="dark"],
+:root:not([data-neutral])[data-theme="dark"],
+:root:not([data-neutral]):not([data-theme]) {
+  --bg-canvas: var(--neutral-cool-950); --bg-surface: var(--neutral-cool-900); --bg-surface-raised: #232830;
+  --border-subtle: var(--neutral-cool-800); --border-default: var(--neutral-cool-700);
+  --text-primary: var(--neutral-cool-50); --text-secondary: var(--neutral-cool-300); --text-muted: var(--neutral-cool-500);
+  --text-on-primary: var(--neutral-cool-0);
+  color-scheme: dark;
+}
+
+/* PRIMARY FAMILY × THEME — drives --color-primary and its states */
+:root[data-primary="indigo"][data-theme="light"],
+:root:not([data-primary])[data-theme="light"] {
+  --color-primary: var(--indigo-700); --color-primary-hover: var(--indigo-800); --color-primary-active: var(--indigo-900);
+  --color-primary-subtle: var(--indigo-100); --color-primary-subtle-fg: var(--indigo-700);
+}
+:root[data-primary="indigo"][data-theme="dark"],
+:root:not([data-primary])[data-theme="dark"],
+:root:not([data-primary]):not([data-theme]) {
+  --color-primary: var(--indigo-300); --color-primary-hover: var(--indigo-200); --color-primary-active: var(--indigo-400);
+  --color-primary-subtle: var(--indigo-900); --color-primary-subtle-fg: var(--indigo-200);
+}
+
+:root[data-primary="clay"][data-theme="light"] {
+  --color-primary: var(--clay-500); --color-primary-hover: var(--clay-600); --color-primary-active: var(--clay-700);
+  --color-primary-subtle: var(--clay-100); --color-primary-subtle-fg: var(--clay-700);
+}
+:root[data-primary="clay"][data-theme="dark"] {
+  --color-primary: var(--clay-300); --color-primary-hover: var(--clay-200); --color-primary-active: var(--clay-400);
+  --color-primary-subtle: var(--clay-900); --color-primary-subtle-fg: var(--clay-200);
+}
+
+:root[data-primary="forest"][data-theme="light"] {
+  --color-primary: var(--forest-500); --color-primary-hover: var(--forest-600); --color-primary-active: var(--forest-700);
+  --color-primary-subtle: var(--forest-100); --color-primary-subtle-fg: var(--forest-700);
+}
+:root[data-primary="forest"][data-theme="dark"] {
+  --color-primary: var(--forest-300); --color-primary-hover: var(--forest-200); --color-primary-active: var(--forest-400);
+  --color-primary-subtle: var(--forest-900); --color-primary-subtle-fg: var(--forest-200);
+}
+
+:root[data-primary="burgundy"][data-theme="light"] {
+  --color-primary: var(--burgundy-500); --color-primary-hover: var(--burgundy-600); --color-primary-active: var(--burgundy-700);
+  --color-primary-subtle: var(--burgundy-100); --color-primary-subtle-fg: var(--burgundy-700);
+}
+:root[data-primary="burgundy"][data-theme="dark"] {
+  --color-primary: var(--burgundy-300); --color-primary-hover: var(--burgundy-200); --color-primary-active: var(--burgundy-400);
+  --color-primary-subtle: var(--burgundy-900); --color-primary-subtle-fg: var(--burgundy-200);
+}
+
+:root[data-primary="slate"][data-theme="light"] {
+  --color-primary: var(--slate-500); --color-primary-hover: var(--slate-600); --color-primary-active: var(--slate-700);
+  --color-primary-subtle: var(--slate-100); --color-primary-subtle-fg: var(--slate-700);
+}
+:root[data-primary="slate"][data-theme="dark"] {
+  --color-primary: var(--slate-300); --color-primary-hover: var(--slate-200); --color-primary-active: var(--slate-400);
+  --color-primary-subtle: var(--slate-900); --color-primary-subtle-fg: var(--slate-200);
+}
+
+/* SEMANTIC (success / warning / error / info) × THEME — independent of neutral/primary */
+:root[data-theme="light"],
+:root:not([data-theme]) {
+  --color-success: #3F7A5C; --color-success-subtle: #E9F3EE; --color-success-fg: #2B5942;
+  --color-warning: #C08A34; --color-warning-subtle: #FBF1E1; --color-warning-fg: #8A5F1F;
+  --color-error:   #B3483F; --color-error-subtle:   #FAEBE9; --color-error-fg:   #86322B;
+  --color-info:    #3E7C7C; --color-info-subtle:    #E9F3F3; --color-info-fg:    #2C5A5A;
+}
+:root[data-theme="dark"] {
+  --color-success: #6FAE8C; --color-success-subtle: #1C2E24; --color-success-fg: #9FCBB2;
+  --color-warning: #D9A662; --color-warning-subtle: #2E2313; --color-warning-fg: #E6C08C;
+  --color-error:   #D4756B; --color-error-subtle:   #2E1B18; --color-error-fg:   #E6A199;
+  --color-info:    #6FADAD; --color-info-subtle:    #1C2C2C; --color-info-fg:    #9FCFCF;
+}
+
+/* ============================================================
+   PORTHOS APP TOKENS — mapped onto the color tokens above.
+   Every component rule below consumes only these, so switching
+   data-theme / data-neutral / data-primary re-themes the whole
+   app without any JS re-render.
    ============================================================ */
 :root{
-  --bg:#0f1117;
-  --card:#1a1d27;
-  --card-border:#2a2d3a;
-  --accent:#4f8ef7;
-  --success:#1db954;
-  --warning:#f59e0b;
-  --danger:#ef4444;
-  --text:#f0f0f0;
-  --text-secondary:#9ca3af;
-  --text-muted:#6b7280;
-  --core:#4f8ef7;
-  --growth:#1db954;
-  --moonshot:#f59e0b;
+  --bg: var(--bg-canvas);
+  --card: var(--bg-surface);
+  --card-raised: var(--bg-surface-raised);
+  --card-border: var(--border-subtle);
+  --accent: var(--color-primary);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-error);
+  --text: var(--text-primary);
+  /* --text-secondary / --text-muted already defined above with matching names */
+}
+/* Solid high-emphasis fills (primary buttons, accent badges) need a shade that
+   still contrasts with --text-on-primary. In dark themes --color-primary is a
+   light tint meant for foreground/accent use, not a solid fill, so we fall
+   back to the darker "active" stop there; light themes can use the base
+   primary directly. See PR notes for the one family (clay/forest/slate dark)
+   where even --color-primary-active is a borderline AA contrast — an
+   inherent gap in the supplied token set for this specific use, not a bug. */
+:root[data-theme="light"],
+:root:not([data-theme]) {
+  --accent-solid: var(--color-primary);
+}
+:root[data-theme="dark"] {
+  --accent-solid: var(--color-primary-active);
+}
+/* Tier qualitative palette (Core/Growth/Moonshot) is deliberately independent
+   of the user's chosen primary family — three tiers need to stay visually
+   distinct from each other no matter which accent is selected — so it's
+   pinned to fixed families from the raw scale, themed for light/dark only. */
+:root[data-theme="light"],
+:root:not([data-theme]) {
+  --core: var(--indigo-700); --core-subtle: var(--indigo-100);
+  --growth: var(--forest-700); --growth-subtle: var(--forest-100);
+  --moonshot: var(--clay-700); --moonshot-subtle: var(--clay-100);
+}
+:root[data-theme="dark"] {
+  --core: var(--indigo-300); --core-subtle: var(--indigo-900);
+  --growth: var(--forest-300); --growth-subtle: var(--forest-900);
+  --moonshot: var(--clay-300); --moonshot-subtle: var(--clay-900);
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
@@ -47,7 +255,7 @@ input,select,textarea{font-family:inherit;}
    ============================================================ */
 #banner-container{position:sticky;top:0;z-index:40;}
 .banner-warning{
-  background:#3a2f10;
+  background:var(--color-warning-subtle);
   color:var(--warning);
   border-bottom:1px solid var(--warning);
   padding:10px 16px;
@@ -57,7 +265,7 @@ input,select,textarea{font-family:inherit;}
 .tabbar{
   position:sticky;top:0;z-index:30;
   display:flex;overflow-x:auto;white-space:nowrap;
-  background:#12141c;
+  background:var(--bg);
   border-bottom:1px solid var(--card-border);
   padding:0 8px;
   scrollbar-width:thin;
@@ -94,17 +302,17 @@ input,select,textarea{font-family:inherit;}
 .metric-value{font-size:22px;font-weight:700;color:var(--text);}
 .metric-sub{font-size:12px;color:var(--text-secondary);margin-top:4px;}
 
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:var(--text-on-primary);white-space:nowrap;}
 .badge-success{background:var(--success);}
 .badge-warning{background:var(--warning);color:#1a1408;}
 .badge-danger{background:var(--danger);}
-.badge-accent{background:var(--accent);}
-.badge-muted{background:#3a3d4a;color:var(--text-secondary);}
+.badge-accent{background:var(--accent-solid);}
+.badge-muted{background:var(--card-raised);color:var(--text-secondary);}
 
 .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;}
-.pill-Core{background:rgba(79,142,247,.18);color:var(--core);}
-.pill-Growth{background:rgba(29,185,84,.18);color:var(--growth);}
-.pill-Moonshot{background:rgba(245,158,11,.18);color:var(--moonshot);}
+.pill-Core{background:var(--core-subtle);color:var(--core);}
+.pill-Growth{background:var(--growth-subtle);color:var(--growth);}
+.pill-Moonshot{background:var(--moonshot-subtle);color:var(--moonshot);}
 
 .text-success{color:var(--success);}
 .text-danger{color:var(--danger);}
@@ -114,27 +322,27 @@ input,select,textarea{font-family:inherit;}
 
 .alert-box{
   border-left:2px solid var(--card-border);
-  background:rgba(255,255,255,.02);
+  background:color-mix(in srgb, var(--text-primary) 3%, transparent);
   padding:10px 14px;border-radius:6px;font-size:13px;
   margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
 }
-.alert-success{border-left-color:var(--success);background:rgba(29,185,84,.08);color:var(--success);}
-.alert-warning{border-left-color:var(--warning);background:rgba(245,158,11,.08);color:var(--warning);}
-.alert-danger{border-left-color:var(--danger);background:rgba(239,68,68,.08);color:var(--danger);}
+.alert-success{border-left-color:var(--success);background:var(--color-success-subtle);color:var(--color-success-fg);}
+.alert-warning{border-left-color:var(--warning);background:var(--color-warning-subtle);color:var(--color-warning-fg);}
+.alert-danger{border-left-color:var(--danger);background:var(--color-error-subtle);color:var(--color-error-fg);}
 
 /* ============================================================
    BUTTONS
    ============================================================ */
 .btn{
-  background:#252836;border:1px solid var(--card-border);color:var(--text);
+  background:var(--card-raised);border:1px solid var(--card-border);color:var(--text);
   padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;
   cursor:pointer;transition:background .15s,border-color .15s;
 }
-.btn:hover{background:#2f3345;}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
-.btn-primary:hover{background:#3f7de0;}
+.btn:hover{background:color-mix(in srgb, var(--card-raised) 82%, var(--text-primary) 18%);}
+.btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--text-on-primary);}
+.btn-primary:hover{background:color-mix(in srgb, var(--accent-solid) 85%, black 15%);}
 .btn-danger{background:transparent;border-color:var(--danger);color:var(--danger);}
-.btn-danger:hover{background:rgba(239,68,68,.1);}
+.btn-danger:hover{background:var(--color-error-subtle);}
 .btn-block{width:100%;}
 .btn-lg{padding:14px 20px;font-size:15px;}
 .btn-sm{padding:5px 10px;font-size:12px;}
@@ -146,7 +354,7 @@ input,select,textarea{font-family:inherit;}
 .form-group{margin-bottom:14px;}
 .form-label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 .form-input,.form-select,.form-textarea{
-  width:100%;background:#12141c;border:1px solid var(--card-border);color:var(--text);
+  width:100%;background:var(--bg);border:1px solid var(--card-border);color:var(--text);
   padding:9px 12px;border-radius:8px;font-size:13px;outline:none;
 }
 .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);}
@@ -170,26 +378,26 @@ th{
 }
 td{padding:10px;border-bottom:1px solid var(--card-border);white-space:nowrap;}
 tr:last-child td{border-bottom:none;}
-tbody tr:hover{background:rgba(255,255,255,.02);}
+tbody tr:hover{background:color-mix(in srgb, var(--text-primary) 3%, transparent);}
 .ticker-cell{font-weight:700;}
-.row-highlight{background:rgba(29,185,84,.06);}
+.row-highlight{background:var(--color-success-subtle);}
 
 /* ============================================================
    PROGRESS BARS
    ============================================================ */
-.progress-track{position:relative;background:#12141c;border-radius:999px;height:10px;overflow:visible;margin:14px 0 6px;}
+.progress-track{position:relative;background:var(--bg);border-radius:999px;height:10px;overflow:visible;margin:14px 0 6px;}
 .progress-fill{background:var(--accent);height:100%;border-radius:999px;transition:width .8s ease;}
 .progress-milestone{position:absolute;top:-4px;width:2px;height:18px;background:var(--card-border);}
 .progress-milestone span{position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--text-muted);}
-.mini-bar-track{position:relative;background:#12141c;border-radius:4px;height:8px;margin-top:6px;}
+.mini-bar-track{position:relative;background:var(--bg);border-radius:4px;height:8px;margin-top:6px;}
 .mini-bar-fill{height:100%;border-radius:4px;}
-.mini-bar-target{position:absolute;top:-3px;width:2px;height:14px;background:#fff;}
+.mini-bar-target{position:absolute;top:-3px;width:2px;height:14px;background:var(--text-primary);}
 
 /* ============================================================
    SKELETON LOADING
    ============================================================ */
 .skeleton{
-  display:inline-block;background:linear-gradient(90deg,#242732 25%,#2f3341 37%,#242732 63%);
+  display:inline-block;background:linear-gradient(90deg,var(--card-raised) 25%,color-mix(in srgb, var(--card-raised) 60%, var(--text-primary) 40%) 37%,var(--card-raised) 63%);
   background-size:400% 100%;animation:pulse 1.4s ease infinite;border-radius:4px;color:transparent!important;
 }
 @keyframes pulse{0%{background-position:100% 50%}100%{background-position:0 50%}}
@@ -267,7 +475,8 @@ const LS_KEYS = {
   sessionHigh: 'porthos_session_high_spy',
   spyHistory: 'porthos_spy_history',
   cacheNews: 'porthos_cache_news',
-  gdriveToken: 'porthos_gdrive_token'
+  gdriveToken: 'porthos_gdrive_token',
+  themePrefs: 'porthos_theme_prefs'
 };
 
 const DEFAULT_SETTINGS = {
@@ -334,6 +543,16 @@ let trimInitiateState = {};              // ticker -> bool, "would you initiate 
 let reviewDraft = { thesisChanged: null, thesisNotes: '', newPositions: '' };
 let actionLogFilters = { tickers: [], dateFrom: '', dateTo: '', actionType: 'all', sortDir: 'desc' };
 let newsState = { holdings: [], macro: [], lastRefresh: null, filter: 'all' };
+
+// Current appearance selection — read from <html>'s data-* attributes rather
+// than localStorage directly, since the inline head script may have already
+// applied a stored preference before this script ran; documentElement is the
+// single source of truth for what's actually painted right now.
+let themePrefs = {
+  theme: document.documentElement.getAttribute('data-theme') || 'dark',
+  neutral: document.documentElement.getAttribute('data-neutral') || 'cool',
+  primary: document.documentElement.getAttribute('data-primary') || 'indigo'
+};
 
 /* ================================================================
    2. UTILITIES
@@ -2151,10 +2370,39 @@ function renderMarketNewsTab() {
 /* ================================================================
    10. RENDERING — TAB 8: SETTINGS
    ================================================================ */
+const PRIMARY_FAMILY_LABELS = { indigo: 'Indigo', clay: 'Clay', forest: 'Forest', burgundy: 'Burgundy', slate: 'Slate' };
+
 function renderSettings() {
   const dcaYears = Object.keys(appData.dcaSchedule).sort();
   const dt = appData.settings.driftThresholds;
   return `
+  <div class="card">
+    <div class="section-header">Appearance</div>
+    <div class="form-row" style="grid-template-columns:repeat(3,1fr);">
+      <div class="form-group">
+        <label class="form-label">Theme</label>
+        <select class="form-select" data-theme-pref="theme">
+          <option value="dark" ${themePrefs.theme === 'dark' ? 'selected' : ''}>Dark</option>
+          <option value="light" ${themePrefs.theme === 'light' ? 'selected' : ''}>Light</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Neutral Tone</label>
+        <select class="form-select" data-theme-pref="neutral">
+          <option value="cool" ${themePrefs.neutral === 'cool' ? 'selected' : ''}>Cool</option>
+          <option value="warm" ${themePrefs.neutral === 'warm' ? 'selected' : ''}>Warm</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Primary Family</label>
+        <select class="form-select" data-theme-pref="primary">
+          ${Object.keys(PRIMARY_FAMILY_LABELS).map(p => `<option value="${p}" ${themePrefs.primary === p ? 'selected' : ''}>${PRIMARY_FAMILY_LABELS[p]}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="metric-sub">Applies instantly and is remembered on this device (not synced via Gist). Core/Growth/Moonshot tier colors stay fixed regardless of Primary Family, so tiers remain distinguishable from each other and from the accent color.</div>
+  </div>
+
   <div class="card">
     <div class="section-header">API Configuration</div>
     <div class="form-group">
@@ -2752,6 +3000,14 @@ function attachEventDelegation() {
       persistDataCache();
       debouncedSaveToGist();
       renderAll();
+      return;
+    }
+    const themePrefInput = e.target.closest('[data-theme-pref]');
+    if (themePrefInput) {
+      const key = themePrefInput.dataset.themePref;
+      themePrefs[key] = themePrefInput.value;
+      document.documentElement.setAttribute('data-' + key, themePrefInput.value);
+      localStorage.setItem(LS_KEYS.themePrefs, JSON.stringify(themePrefs));
       return;
     }
     const posFieldInput = e.target.closest('[data-position-field]');
