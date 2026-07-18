@@ -9,17 +9,20 @@
 <title>PORTHOS — Portfolio Orchestration &amp; Rebalancing Tool</title>
 <script>
 // Applied synchronously, before CSS paints, so a stored theme preference
-// never flashes the data-theme="dark" default first.
+// never flashes the default first. Sets the attributes unconditionally
+// (rather than relying on the static <html data-theme="dark" ...> markup)
+// so theming still works correctly if this markup is ever embedded as a
+// fragment inside another page's own <html> element.
 (function () {
+  var root = document.documentElement;
+  var prefs = { theme: 'dark', neutral: 'cool', primary: 'indigo' };
   try {
     var raw = localStorage.getItem('porthos_theme_prefs');
-    if (!raw) return;
-    var prefs = JSON.parse(raw);
-    var root = document.documentElement;
-    if (prefs.theme) root.setAttribute('data-theme', prefs.theme);
-    if (prefs.neutral) root.setAttribute('data-neutral', prefs.neutral);
-    if (prefs.primary) root.setAttribute('data-primary', prefs.primary);
-  } catch (e) { /* ignore corrupt storage, keep markup defaults */ }
+    if (raw) prefs = Object.assign(prefs, JSON.parse(raw));
+  } catch (e) { /* ignore corrupt storage, keep defaults */ }
+  root.setAttribute('data-theme', prefs.theme);
+  root.setAttribute('data-neutral', prefs.neutral);
+  root.setAttribute('data-primary', prefs.primary);
 })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
