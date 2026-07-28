@@ -48,7 +48,7 @@
   --neutral-warm-700: #504639;
   --neutral-warm-800: #362E25;
   --neutral-warm-900: #211B15;
-  --neutral-warm-950: #16120D;
+  --neutral-warm-950: #1E1B18;
 
   /* Neutrals — cool (blue-tinted) */
   --neutral-cool-0:   #FCFCFD;
@@ -308,6 +308,14 @@ details[open] > summary.section-header{margin-bottom:10px;}
 .metric-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 .metric-value{font-size:22px;font-weight:700;color:var(--text);}
 .metric-sub{font-size:12px;color:var(--text-secondary);margin-top:4px;}
+.metric-dual{display:flex;gap:16px;margin-top:2px;}
+.metric-dual-item{flex:1;min-width:0;}
+.metric-dual-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;}
+.metric-dual-value{font-size:17px;font-weight:700;color:var(--text);overflow-wrap:break-word;}
+
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.icon-spin{display:inline-flex;animation:spin .8s linear infinite;vertical-align:-3px;}
+.icon-spin svg{vertical-align:baseline;}
 
 .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:var(--text-on-primary);white-space:nowrap;}
 .badge-success{background:var(--success);}
@@ -569,6 +577,12 @@ let sessionHigh = null;    // { price, since }
 let lastRefresh = null;
 let currentTab = 1;
 let isLoadingPrices = false;
+// Whole-operation loading flags — set true (and rendered) *before* the async
+// work starts, unlike isLoadingPrices which fetchAllPrices only flips mid-flight
+// after fx/spy have already been fetched, so those flags alone under-report
+// how long the overall refresh is running.
+let isMarketRefreshing = false;
+let isNewsRefreshing = false;
 let gistConfigured = false;
 
 // Phase 2 runtime state (not persisted to Gist, except where noted).
@@ -1286,15 +1300,29 @@ function renderDashboard() {
   <div class="grid grid-4">
     <div class="card">
       <div class="metric-label">Total Portfolio Value</div>
-      <div class="metric-value" data-animate-value="${totalValueTHB}" data-animate-format="THB">${fmtTHB(totalValueTHB)}</div>
-      <div class="metric-sub">${fmtUSD(metrics.totalValueUSD)} excl. cash</div>
-      <div class="metric-sub">${fmtTHB(totalValueWithCashTHB)} incl. cash</div>
+      <div class="metric-dual">
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Excl. Cash</div>
+          <div class="metric-dual-value" data-animate-value="${totalValueTHB}" data-animate-format="THB">${fmtTHB(totalValueTHB)}</div>
+        </div>
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Incl. Cash</div>
+          <div class="metric-dual-value">${fmtTHB(totalValueWithCashTHB)}</div>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="metric-label">Total P/L %</div>
-      <div class="metric-value ${totalPlPct === null ? '' : (totalPlPct >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPct)}</div>
-      <div class="metric-sub">${fmtUSD(metrics.totalValueUSD - metrics.totalCostUSD)} vs cost basis · excl. cash</div>
-      <div class="metric-sub ${totalPlPctWithCash === null ? '' : (totalPlPctWithCash >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPctWithCash)} incl. cash</div>
+      <div class="metric-dual">
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Excl. Cash</div>
+          <div class="metric-dual-value ${totalPlPct === null ? '' : (totalPlPct >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPct)}</div>
+        </div>
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Incl. Cash</div>
+          <div class="metric-dual-value ${totalPlPctWithCash === null ? '' : (totalPlPctWithCash >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPctWithCash)}</div>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="metric-label">Cash</div>
@@ -1309,7 +1337,8 @@ function renderDashboard() {
   </div>
 
   <div class="card">
-    <div class="section-header">Investment Horizon</div>
+    <details open>
+    <summary class="section-header">Investment Horizon</summary>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Start Date</label>
@@ -1327,29 +1356,33 @@ function renderDashboard() {
       <div class="progress-milestone" style="left:75%"><span>75%</span></div>
     </div>
     <div class="metric-sub" style="margin-top:14px;">${elapsed.years}y ${elapsed.months}m elapsed · ${remaining.years}y ${remaining.months}m remaining (${pctElapsed.toFixed(1)}%)</div>
+    </details>
   </div>
 
   <div class="card">
-    <div class="section-header">Active Alerts</div>
+    <details open>
+    <summary class="section-header">Active Alerts</summary>
     ${alerts.length === 0
       ? '<div class="alert-box alert-success">✓ All systems nominal</div>'
       : alerts.map(a => `<div class="alert-box alert-${a.type === 'accent' ? 'warning' : a.type}">${a.html}</div>`).join('')}
+    </details>
   </div>
 
   <div class="card">
-    <div class="section-header">Market Snapshot</div>
+    <details open>
+    <summary class="section-header">Market Snapshot</summary>
     <div class="grid grid-4">
       <div>
         <div class="metric-label">SPX (S&amp;P 500 Index)</div>
-        <div class="metric-value">${spy.price ? fmtUSD(spy.price) : '—'}${spy.cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''}</div>
+        <div class="metric-value">${isMarketRefreshing ? '<span class="skeleton">$0,000.00</span>' : (spy.price ? fmtUSD(spy.price) : '—')}${spy.cached && !isMarketRefreshing ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''}</div>
       </div>
       <div>
         <div class="metric-label">Day Change</div>
-        <div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)} (${fmtUSD(spy.dayChangeAbs)})</div>
+        <div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${isMarketRefreshing ? '<span class="skeleton">+0.00% ($0.00)</span>' : `${fmtPct(spy.dayChangePct)} (${fmtUSD(spy.dayChangeAbs)})`}</div>
       </div>
       <div>
         <div class="metric-label">Drawdown from Session High</div>
-        <div class="metric-value" style="font-size:16px;">${spyDrawdown !== null ? fmtPct(spyDrawdown) : '—'}</div>
+        <div class="metric-value" style="font-size:16px;">${isMarketRefreshing ? '<span class="skeleton">0.00%</span>' : (spyDrawdown !== null ? fmtPct(spyDrawdown) : '—')}</div>
         <div class="metric-sub">52-week high tracking builds over time</div>
       </div>
       <div>
@@ -1357,11 +1390,15 @@ function renderDashboard() {
         <div class="metric-value" style="font-size:14px;">${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : 'never'}</div>
       </div>
     </div>
-    <div class="btn-row"><button class="btn" data-action="refresh-market">${icon('refresh')} Refresh</button></div>
+    <div class="btn-row">
+      <button class="btn" data-action="refresh-market" ${isMarketRefreshing ? 'disabled' : ''}>${isMarketRefreshing ? `<span class="icon-spin">${icon('refresh')}</span> Refreshing…` : `${icon('refresh')} Refresh`}</button>
+    </div>
+    </details>
   </div>
 
   <div class="card">
-    <div class="section-header">Goal Progress</div>
+    <details open>
+    <summary class="section-header">Goal Progress</summary>
     <div class="metric-value">${fmtTHB(totalValueTHB)} <span class="text-muted" style="font-size:13px;font-weight:400;">/ ${fmtTHB(appData.settings.goalTHB)}</span></div>
     <div class="progress-track"><div class="progress-fill" style="width:${pctGoal}%;background:var(--success);"></div></div>
     <div class="metric-sub" style="margin-bottom:14px;">${pctGoal.toFixed(1)}% of goal reached</div>
@@ -1382,6 +1419,7 @@ function renderDashboard() {
     <div class="section-header" style="margin-top:18px;">Projection Chart</div>
     ${renderProjectionChartSVG(scenarios, totalValueTHB)}
     <div class="metric-sub" style="margin-top:6px;">Scenario CAGR assumptions are editable in the Projection tab.</div>
+    </details>
   </div>
   `;
 }
@@ -1413,10 +1451,13 @@ function renderPortfolio() {
   const rowsHtml = metrics.rows.map(r => {
     const priceCell = !apiConfig.finnhubKey
       ? `${icon('key')} Add Finnhub API key in Settings`
-      : (r.price === null
-        ? (isLoadingPrices ? '<span class="skeleton">$000.00</span>' : '—')
-        : fmtUSD(r.price) + (prices[r.pos.ticker] && prices[r.pos.ticker].cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''));
+      : (isMarketRefreshing
+        ? '<span class="skeleton">$000.00</span>'
+        : (r.price === null
+          ? '—'
+          : fmtUSD(r.price) + (prices[r.pos.ticker] && prices[r.pos.ticker].cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : '')));
     const dayChg = prices[r.pos.ticker] ? prices[r.pos.ticker].dayChangePct : null;
+    const dayChgCell = !apiConfig.finnhubKey ? '—' : (isMarketRefreshing ? '<span class="skeleton">+0.00%</span>' : (dayChg === null ? '—' : fmtPct(dayChg)));
     const valueTHB = r.value * (fx.rate || 0);
     const driftClass = Math.abs(r.drift) > r.threshold ? 'text-danger' : (Math.abs(r.drift) > r.threshold - 1 ? 'text-warning' : 'text-secondary');
     return `
@@ -1426,7 +1467,7 @@ function renderPortfolio() {
       <td>${fmtNum(r.pos.shares, 4)}</td>
       <td>${fmtUSD(r.pos.avgCost)}</td>
       <td>${priceCell}</td>
-      <td class="${dayChg === null ? '' : (dayChg >= 0 ? 'text-success' : 'text-danger')}">${dayChg === null ? '—' : fmtPct(dayChg)}</td>
+      <td class="${dayChg === null ? '' : (dayChg >= 0 ? 'text-success' : 'text-danger')}">${dayChgCell}</td>
       <td>${fmtUSD(r.value)}</td>
       <td>${fmtTHB(valueTHB)}</td>
       <td class="${r.plPct === null ? '' : (r.plPct >= 0 ? 'text-success' : 'text-danger')}" style="font-weight:700;">${r.plPct === null ? '—' : fmtPct(r.plPct)}</td>
@@ -1494,7 +1535,7 @@ function renderPortfolio() {
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" data-action="open-add-position-modal">＋ Add Position</button>
-      <button class="btn" data-action="refresh-market">${icon('refresh')} Refresh All Prices</button>
+      <button class="btn" data-action="refresh-market" ${isMarketRefreshing ? 'disabled' : ''}>${isMarketRefreshing ? `<span class="icon-spin">${icon('refresh')}</span> Refreshing…` : `${icon('refresh')} Refresh All Prices`}</button>
       <span class="metric-sub" style="align-self:center;">Last updated: ${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : '—'}</span>
     </div>
   </div>
@@ -2411,10 +2452,12 @@ function renderMarketNewsTab() {
     return `<button class="btn btn-sm ${newsState.filter === f ? 'btn-primary' : ''}" data-action="filter-news" data-filter="${esc(f)}">${esc(label)}</button>`;
   }).join('');
 
+  const newsSkeleton = '<div class="alert-box" style="display:block;"><span class="skeleton" style="display:block;width:60%;height:10px;margin-bottom:8px;">tt</span><span class="skeleton" style="display:block;width:90%;height:14px;">tt</span></div>'.repeat(3);
+
   return `
   <div class="card">
     <div class="btn-row" style="margin-top:0;">
-      <button class="btn btn-primary" data-action="refresh-news">${icon('refresh')} Refresh News</button>
+      <button class="btn btn-primary" data-action="refresh-news" ${isNewsRefreshing ? 'disabled' : ''}>${isNewsRefreshing ? `<span class="icon-spin">${icon('refresh')}</span> Refreshing…` : `${icon('refresh')} Refresh News`}</button>
       <span class="metric-sub" style="align-self:center;">Last refreshed: ${newsState.lastRefresh ? new Date(newsState.lastRefresh).toLocaleTimeString() : 'never'}</span>
     </div>
     <div class="btn-row">${filterButtons}</div>
@@ -2422,12 +2465,12 @@ function renderMarketNewsTab() {
 
   <div class="card">
     <div class="section-header">Holdings News</div>
-    ${holdingsShown.length === 0 ? '<div class="metric-sub text-muted">No holdings news loaded yet. Click Refresh News.</div>' : holdingsShown.map(i => newsCardHtml(i, false)).join('')}
+    ${isNewsRefreshing ? newsSkeleton : (holdingsShown.length === 0 ? '<div class="metric-sub text-muted">No holdings news loaded yet. Click Refresh News.</div>' : holdingsShown.map(i => newsCardHtml(i, false)).join(''))}
   </div>
 
   <div class="card">
     <div class="section-header">Market &amp; Macro News</div>
-    ${macroShown.length === 0 ? '<div class="metric-sub text-muted">No macro news loaded yet. Click Refresh News.</div>' : macroShown.map(i => newsCardHtml(i, true)).join('')}
+    ${isNewsRefreshing ? newsSkeleton : (macroShown.length === 0 ? '<div class="metric-sub text-muted">No macro news loaded yet. Click Refresh News.</div>' : macroShown.map(i => newsCardHtml(i, true)).join(''))}
   </div>
   `;
 }
@@ -2942,9 +2985,11 @@ function attachEventDelegation() {
         removePosition(target.dataset.ticker);
         break;
       case 'refresh-market':
-        target.disabled = true;
+        isMarketRefreshing = true;
+        renderAll();
         await refreshAllMarketData();
-        target.disabled = false;
+        isMarketRefreshing = false;
+        renderAll();
         break;
       case 'save-api-settings': {
         apiConfig.finnhubKey = document.getElementById('input-finnhub-key').value.trim();
@@ -3134,9 +3179,11 @@ function attachEventDelegation() {
       case 'confirm-add-note': confirmAddNote(); break;
       case 'delete-note': deleteNote(target.dataset.noteId); break;
       case 'refresh-news':
-        target.disabled = true;
+        isNewsRefreshing = true;
+        renderAll();
         await refreshNewsData();
-        target.disabled = false;
+        isNewsRefreshing = false;
+        renderAll();
         break;
       case 'filter-news':
         newsState.filter = target.dataset.filter;
