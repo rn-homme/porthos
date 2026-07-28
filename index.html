@@ -287,13 +287,15 @@ input,select,textarea{font-family:inherit;}
 /* ============================================================
    PRIMITIVES — CARDS, GRIDS, BADGES, PILLS
    ============================================================ */
-.grid{display:grid;gap:14px;margin-bottom:14px;}
+.grid{display:grid;gap:14px;margin-bottom:14px;align-items:stretch;}
 .grid-4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
 .card{
   background:var(--card);
   border:1px solid var(--card-border);
   border-radius:12px;
   padding:18px;
+  height:100%;
+  box-sizing:border-box;
 }
 .card.highlight{border:1.5px solid var(--accent);}
 .card+.card{margin-top:14px;}
@@ -308,8 +310,8 @@ details[open] > summary.section-header{margin-bottom:10px;}
 .metric-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 .metric-value{font-size:22px;font-weight:700;color:var(--text);}
 .metric-sub{font-size:12px;color:var(--text-secondary);margin-top:4px;}
-.metric-dual{display:flex;gap:16px;margin-top:2px;}
-.metric-dual-item{flex:1;min-width:0;}
+.metric-dual{display:flex;flex-direction:column;gap:8px;margin-top:2px;}
+.metric-dual-item{min-width:0;}
 .metric-dual-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;}
 .metric-dual-value{font-size:17px;font-weight:700;color:var(--text);overflow-wrap:break-word;}
 
