@@ -632,8 +632,6 @@ let openRowMenuPos = null;
 /* ================================================================
    2. UTILITIES
    ================================================================ */
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
 function fmtUSD(n, dec = 2) {
   if (n === null || n === undefined || isNaN(n)) return '—';
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -818,9 +816,22 @@ const debouncedSaveToGist = debounce(() => trySaveToGist(true), 1200);
 /* ================================================================
    4. MARKET DATA — Finnhub quotes, FX rate, SPY proxy
    ================================================================ */
+// A hung request (bad network, an unresponsive API) must not block the refresh
+// pipeline forever — cap every outbound call so failures surface within 10s
+// instead of leaving the "Refreshing…" button stuck with no feedback.
+async function fetchWithTimeout(url, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchFxRate() {
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const res = await fetchWithTimeout('https://open.er-api.com/v6/latest/USD');
     if (!res.ok) throw new Error('FX API ' + res.status);
     const data = await res.json();
     if (!data.rates || !data.rates.THB) throw new Error('THB rate missing');
@@ -835,58 +846,74 @@ async function fetchFxRate() {
 async function fetchQuote(ticker) {
   if (!apiConfig.finnhubKey) return null;
   const url = 'https://finnhub.io/api/v1/quote?symbol=' + encodeURIComponent(ticker) + '&token=' + encodeURIComponent(apiConfig.finnhubKey);
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error('Finnhub API ' + res.status);
   const data = await res.json();
   if (data.c === undefined) throw new Error('Malformed Finnhub response');
   return data; // {c, h, l, o, pc, t}
 }
 
+// Batched-parallel rather than one-ticker-at-a-time: Finnhub's free plan allows
+// 60 calls/min, so 5 concurrent requests per batch stays well under that limit
+// while cutting a 20-position refresh from ~15s of sequential round-trips to
+// roughly 4 batches worth of latency.
+const PRICE_FETCH_CONCURRENCY = 5;
 async function fetchAllPrices() {
   if (!apiConfig.finnhubKey) return;
   isLoadingPrices = true;
   const tickers = appData.positions.map(p => p.ticker);
-  for (const ticker of tickers) {
-    try {
-      const q = await fetchQuote(ticker);
-      if (q) {
-        prices[ticker] = {
-          price: q.c, prevClose: q.pc,
-          dayChangeAbs: q.c - q.pc,
-          dayChangePct: q.pc ? ((q.c - q.pc) / q.pc) * 100 : 0,
-          ts: Date.now(), cached: false
-        };
+  for (let i = 0; i < tickers.length; i += PRICE_FETCH_CONCURRENCY) {
+    const batch = tickers.slice(i, i + PRICE_FETCH_CONCURRENCY);
+    await Promise.all(batch.map(async ticker => {
+      try {
+        const q = await fetchQuote(ticker);
+        if (q) {
+          prices[ticker] = {
+            price: q.c, prevClose: q.pc,
+            dayChangeAbs: q.c - q.pc,
+            dayChangePct: q.pc ? ((q.c - q.pc) / q.pc) * 100 : 0,
+            ts: Date.now(), cached: false
+          };
+        }
+      } catch (e) {
+        if (prices[ticker]) prices[ticker] = Object.assign({}, prices[ticker], { cached: true });
       }
-    } catch (e) {
-      if (prices[ticker]) prices[ticker] = Object.assign({}, prices[ticker], { cached: true });
-    }
-    await sleep(100); // rate-limit friendliness
+    }));
   }
   persistPricesCache();
   isLoadingPrices = false;
 }
 
+// Finnhub's free-tier /quote endpoint returns "You don't have access to this
+// resource" for real index symbols (^GSPC) — index-level data requires a paid
+// market-data add-on. Left as-is, that 403 was silently caught and the UI got
+// stuck forever showing whatever was last cached (which is why the number on
+// screen could drift far from the real S&P 500). SPY, a regular ETF, IS
+// available on the free tier and is structured to track 1/10th of the S&P 500
+// index price, so we derive an index-level approximation from it instead.
+// Internal variable/storage names keep the historical "spy" naming to avoid
+// churning unrelated persistence keys.
+const SPY_TO_SPX_MULTIPLIER = 10;
 async function fetchSpyData() {
-  // Tracks the actual S&P 500 index (Finnhub symbol ^GSPC), not the SPY ETF proxy.
-  // Internal variable/storage names keep the historical "spy" naming to avoid
-  // churning unrelated persistence keys.
   if (!apiConfig.finnhubKey) return;
   try {
-    const q = await fetchQuote('^GSPC');
+    const q = await fetchQuote('SPY');
+    const price = q.c * SPY_TO_SPX_MULTIPLIER;
+    const prevClose = q.pc * SPY_TO_SPX_MULTIPLIER;
     spy = {
-      price: q.c, prevClose: q.pc,
-      dayChangeAbs: q.c - q.pc,
+      price, prevClose,
+      dayChangeAbs: price - prevClose,
       dayChangePct: q.pc ? ((q.c - q.pc) / q.pc) * 100 : 0,
       ts: Date.now(), cached: false
     };
     persistSpyCache();
     // Session/local "52-week high" tracking — Finnhub free tier has no true 52wk-high field,
     // so we track the highest price this app has ever observed, persisted across sessions.
-    if (!sessionHigh || q.c > sessionHigh.price) {
-      sessionHigh = { price: q.c, since: sessionHigh ? sessionHigh.since : todayISO() };
+    if (!sessionHigh || price > sessionHigh.price) {
+      sessionHigh = { price, since: sessionHigh ? sessionHigh.since : todayISO() };
       persistSessionHigh();
     }
-    recordSpyHistory(q.c);
+    recordSpyHistory(price);
   } catch (e) {
     spy = Object.assign({}, spy, { cached: true });
   }
@@ -1279,11 +1306,15 @@ function renderAll() {
    ================================================================ */
 function renderDashboard() {
   const metrics = computePortfolioMetrics();
-  const { cashUSD, cashTHB, cashTotalTHB } = computeCashTotals();
+  const { cashUSD, cashTHB, cashTotalTHB, cashTotalUSD } = computeCashTotals();
   const totalValueTHB = metrics.totalValueUSD * (fx.rate || 0);
   const totalValueWithCashTHB = metrics.grandTotalUSD * (fx.rate || 0);
   const totalPlPct = metrics.totalCostUSD > 0 ? ((metrics.totalValueUSD - metrics.totalCostUSD) / metrics.totalCostUSD) * 100 : null;
-  const totalPlPctWithCash = metrics.totalCostUSD > 0 ? ((metrics.grandTotalUSD - metrics.totalCostUSD) / metrics.totalCostUSD) * 100 : null;
+  // Cash carries no gain/loss of its own, so it must count as principal on both
+  // sides of the ratio — otherwise idle cash reads as pure profit and inflates
+  // the blended return.
+  const totalCostInclCashUSD = metrics.totalCostUSD + cashTotalUSD;
+  const totalPlPctWithCash = totalCostInclCashUSD > 0 ? ((metrics.grandTotalUSD - totalCostInclCashUSD) / totalCostInclCashUSD) * 100 : null;
 
   // THB is "strong" when it takes fewer THB to buy 1 USD (a low rate) — that's
   // the favorable moment to convert THB into USD. A high rate means THB has
@@ -1362,6 +1393,7 @@ function renderDashboard() {
       <div>
         <div class="metric-label">SPX (S&amp;P 500 Index)</div>
         <div class="metric-value">${isMarketRefreshing ? '<span class="skeleton">$0,000.00</span>' : (spy.price ? fmtUSD(spy.price) : '—')}${spy.cached && !isMarketRefreshing ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''}</div>
+        <div class="metric-sub">Derived from SPY ×10 — Finnhub free tier has no direct index feed</div>
       </div>
       <div>
         <div class="metric-label">Day Change</div>
@@ -1990,7 +2022,7 @@ function renderRebalancingTab() {
   <div class="card">
     <div class="section-header">Market Drawdown Monitor</div>
     <div class="grid grid-4">
-      <div><div class="metric-label">SPX (S&amp;P 500 Index)</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div></div>
+      <div><div class="metric-label">SPX (S&amp;P 500 Index)</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div><div class="metric-sub">Via SPY ×10</div></div>
       <div><div class="metric-label">Day Change</div><div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)}</div></div>
       <div><div class="metric-label">Drawdown from 52wk High</div><div class="metric-value" style="font-size:16px;">${dd52 !== null ? fmtPct(dd52) : '—'}</div></div>
       <div><div class="metric-label">Drawdown from 90d High</div><div class="metric-value" style="font-size:16px;">${dd90 !== null ? fmtPct(dd90) : '—'}</div></div>
@@ -2386,17 +2418,20 @@ async function fetchHoldingsNews() {
   const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 7);
   const from = fromDate.toISOString().slice(0, 10);
   const results = [];
-  for (const pos of appData.positions) {
-    try {
-      const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(pos.ticker)}&from=${from}&to=${to}&token=${encodeURIComponent(apiConfig.finnhubKey)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Finnhub news ' + res.status);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        data.slice(0, 5).forEach(item => results.push(Object.assign({}, item, { ticker: pos.ticker, tier: pos.tier })));
-      }
-    } catch (e) { /* skip this ticker silently — one bad symbol shouldn't blank the whole feed */ }
-    await sleep(200);
+  const positions = appData.positions;
+  for (let i = 0; i < positions.length; i += PRICE_FETCH_CONCURRENCY) {
+    const batch = positions.slice(i, i + PRICE_FETCH_CONCURRENCY);
+    await Promise.all(batch.map(async pos => {
+      try {
+        const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(pos.ticker)}&from=${from}&to=${to}&token=${encodeURIComponent(apiConfig.finnhubKey)}`;
+        const res = await fetchWithTimeout(url);
+        if (!res.ok) throw new Error('Finnhub news ' + res.status);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          data.slice(0, 5).forEach(item => results.push(Object.assign({}, item, { ticker: pos.ticker, tier: pos.tier })));
+        }
+      } catch (e) { /* skip this ticker silently — one bad symbol shouldn't blank the whole feed */ }
+    }));
   }
   results.sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
   return results.slice(0, 50);
@@ -2405,7 +2440,7 @@ async function fetchHoldingsNews() {
 async function fetchMacroNews() {
   if (!apiConfig.finnhubKey) return [];
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${encodeURIComponent(apiConfig.finnhubKey)}`);
+    const res = await fetchWithTimeout(`https://finnhub.io/api/v1/news?category=general&token=${encodeURIComponent(apiConfig.finnhubKey)}`);
     if (!res.ok) throw new Error('Finnhub news ' + res.status);
     const data = await res.json();
     return Array.isArray(data) ? data.slice(0, 20) : [];
@@ -3040,7 +3075,7 @@ function attachEventDelegation() {
         const resultEl = document.getElementById('test-finnhub-result');
         resultEl.textContent = 'Testing...';
         try {
-          const res = await fetch('https://finnhub.io/api/v1/quote?symbol=NVDA&token=' + encodeURIComponent(key));
+          const res = await fetchWithTimeout('https://finnhub.io/api/v1/quote?symbol=NVDA&token=' + encodeURIComponent(key));
           const data = await res.json();
           if (!res.ok || data.c === undefined) throw new Error('Invalid response');
           resultEl.innerHTML = `<span class="text-success">✓ NVDA price: ${fmtUSD(data.c)}</span>`;
