@@ -289,6 +289,15 @@ input,select,textarea{font-family:inherit;}
    ============================================================ */
 .grid{display:grid;gap:14px;margin-bottom:14px;align-items:stretch;}
 .grid-4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
+/* Fixed (non-auto-fit) 4-column row for the Dashboard's top metric cards.
+   auto-fit's minmax(220px,1fr) can fall back to 3 columns at container
+   widths around 900-950px (not enough room for a 4th 220px column), which
+   wraps the 4th card into its own grid row with a different stretch height
+   than the first three — this guarantees exactly 4 (then 2, then 1) equal
+   columns at every width instead. */
+.metrics-row{display:grid;gap:14px;margin-bottom:14px;align-items:stretch;grid-template-columns:repeat(4,1fr);}
+@media (max-width:900px){.metrics-row{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:480px){.metrics-row{grid-template-columns:1fr;}}
 .card{
   background:var(--card);
   border:1px solid var(--card-border);
@@ -1299,7 +1308,7 @@ function renderDashboard() {
   const spyDrawdown = (sessionHigh && sessionHigh.price) ? ((spy.price - sessionHigh.price) / sessionHigh.price) * 100 : null;
 
   return `
-  <div class="grid grid-4">
+  <div class="metrics-row">
     <div class="card">
       <div class="metric-label">Total Portfolio Value</div>
       <div class="metric-dual">
