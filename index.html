@@ -1357,38 +1357,6 @@ function renderDashboard() {
 
   <div class="card">
     <details open>
-    <summary class="section-header">Investment Horizon</summary>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Start Date</label>
-        <input type="date" class="form-input" data-setting="startDate" value="${esc(appData.settings.startDate)}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Target Date</label>
-        <input type="date" class="form-input" data-setting="targetDate" value="${esc(appData.settings.targetDate)}">
-      </div>
-    </div>
-    <div class="progress-track">
-      <div class="progress-fill" style="width:${pctElapsed}%"></div>
-      <div class="progress-milestone" style="left:25%"><span>25%</span></div>
-      <div class="progress-milestone" style="left:50%"><span>50%</span></div>
-      <div class="progress-milestone" style="left:75%"><span>75%</span></div>
-    </div>
-    <div class="metric-sub" style="margin-top:14px;">${elapsed.years}y ${elapsed.months}m elapsed · ${remaining.years}y ${remaining.months}m remaining (${pctElapsed.toFixed(1)}%)</div>
-    </details>
-  </div>
-
-  <div class="card">
-    <details open>
-    <summary class="section-header">Active Alerts</summary>
-    ${alerts.length === 0
-      ? '<div class="alert-box alert-success">✓ All systems nominal</div>'
-      : alerts.map(a => `<div class="alert-box alert-${a.type === 'accent' ? 'warning' : a.type}">${a.html}</div>`).join('')}
-    </details>
-  </div>
-
-  <div class="card">
-    <details open>
     <summary class="section-header">Market Snapshot</summary>
     <div class="grid grid-4">
       <div>
@@ -1417,27 +1385,43 @@ function renderDashboard() {
 
   <div class="card">
     <details open>
+    <summary class="section-header">Active Alerts</summary>
+    ${alerts.length === 0
+      ? '<div class="alert-box alert-success">✓ All systems nominal</div>'
+      : alerts.map(a => `<div class="alert-box alert-${a.type === 'accent' ? 'warning' : a.type}">${a.html}</div>`).join('')}
+    </details>
+  </div>
+
+  <div class="card">
+    <details open>
+    <summary class="section-header">Investment Horizon</summary>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Start Date</label>
+        <input type="date" class="form-input" data-setting="startDate" value="${esc(appData.settings.startDate)}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Date</label>
+        <input type="date" class="form-input" data-setting="targetDate" value="${esc(appData.settings.targetDate)}">
+      </div>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" style="width:${pctElapsed}%"></div>
+      <div class="progress-milestone" style="left:25%"><span>25%</span></div>
+      <div class="progress-milestone" style="left:50%"><span>50%</span></div>
+      <div class="progress-milestone" style="left:75%"><span>75%</span></div>
+    </div>
+    <div class="metric-sub" style="margin-top:14px;">${elapsed.years}y ${elapsed.months}m elapsed · ${remaining.years}y ${remaining.months}m remaining (${pctElapsed.toFixed(1)}%)</div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details open>
     <summary class="section-header">Goal Progress</summary>
-    <div class="metric-value">${fmtTHB(totalValueTHB)} <span class="text-muted" style="font-size:13px;font-weight:400;">/ ${fmtTHB(appData.settings.goalTHB)}</span></div>
     <div class="progress-track"><div class="progress-fill" style="width:${pctGoal}%;background:var(--success);"></div></div>
     <div class="metric-sub" style="margin-bottom:14px;">${pctGoal.toFixed(1)}% of goal reached</div>
-    <div class="table-wrap">
-      <table style="min-width:520px;">
-        <thead><tr><th>Scenario</th><th>CAGR</th><th>Projected Terminal Value (@ target date)</th><th>Est. Goal Year</th></tr></thead>
-        <tbody>
-          ${scenarios.map(s => `
-            <tr class="${s.isEarliest ? 'row-highlight' : ''}">
-              <td>${esc(s.label)}</td>
-              <td>${s.cagrPct}%</td>
-              <td>${fmtTHB(s.terminalValue)}</td>
-              <td class="${s.isEarliest ? 'text-success' : ''}">${s.goalYear ? s.goalYear : '> 40yr'}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div class="section-header" style="margin-top:18px;">Projection Chart</div>
     ${renderProjectionChartSVG(scenarios, totalValueTHB)}
-    <div class="metric-sub" style="margin-top:6px;">Scenario CAGR assumptions are editable in the Projection tab.</div>
+    <div class="metric-sub" style="margin-top:6px;">Full scenario breakdown and CAGR assumptions are in the Projection tab.</div>
     </details>
   </div>
   `;
@@ -1525,22 +1509,30 @@ function renderPortfolio() {
   </div>
 
   <div class="card">
-    <div class="section-header">Cash</div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Cash (USD)</label>
-        <input type="number" step="any" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Cash (THB)</label>
-        <input type="number" step="any" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div class="section-header" style="margin-bottom:0;">Cash</div>
+      <div class="row-menu-wrap">
+        <button class="btn btn-sm" data-action="toggle-row-menu" data-ticker="__cash__" aria-label="Cash actions">${icon('moreVertical')}</button>
+        ${openRowMenuTicker === '__cash__' && openRowMenuPos ? `
+        <div class="row-menu" style="position:fixed;top:${openRowMenuPos.top}px;left:${openRowMenuPos.left}px;">
+          <button class="row-menu-item" data-action="open-edit-cash-modal">${icon('edit')} Edit</button>
+        </div>` : ''}
       </div>
     </div>
-    <div class="metric-sub">Included in portfolio weight and Dashboard totals. Also editable in Settings.</div>
+    <div class="form-row" style="margin-top:10px;">
+      <div>
+        <div class="metric-label">Cash (USD)</div>
+        <div class="metric-value" style="font-size:16px;">${fmtUSD(appData.settings.cashUSD)}</div>
+      </div>
+      <div>
+        <div class="metric-label">Cash (THB)</div>
+        <div class="metric-value" style="font-size:16px;">${fmtTHB(appData.settings.cashTHB)}</div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
-    <div class="metric-sub" style="margin-bottom:10px;">Click ${icon('moreVertical')} on any row to edit its ticker, tier, shares, avg cost, or target % — or to remove it. Shares/Avg Cost set a position's starting point; any DCA entries logged in the DCA Log tab are applied on top automatically.</div>
+    <div class="section-header">Portfolio Breakdown</div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1719,8 +1711,10 @@ function renderDcaEngineTab() {
   </div>
 
   <div class="card">
-    <div class="section-header">DCA Step-up Progress</div>
+    <details open>
+    <summary class="section-header">DCA Step-up Progress</summary>
     ${renderDcaStepupProgress()}
+    </details>
   </div>
 
   <div class="card" style="text-align:center;">
@@ -1728,7 +1722,8 @@ function renderDcaEngineTab() {
   </div>
 
   <div class="card">
-    <div class="section-header">DCA Log History</div>
+    <details open>
+    <summary class="section-header">DCA Log History</summary>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1750,6 +1745,7 @@ function renderDcaEngineTab() {
         </tbody>
       </table>
     </div>
+    </details>
   </div>
   `;
 }
@@ -1992,6 +1988,18 @@ function renderRebalancingTab() {
 
   return `
   <div class="card">
+    <div class="section-header">Market Drawdown Monitor</div>
+    <div class="grid grid-4">
+      <div><div class="metric-label">SPX (S&amp;P 500 Index)</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div></div>
+      <div><div class="metric-label">Day Change</div><div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)}</div></div>
+      <div><div class="metric-label">Drawdown from 52wk High</div><div class="metric-value" style="font-size:16px;">${dd52 !== null ? fmtPct(dd52) : '—'}</div></div>
+      <div><div class="metric-label">Drawdown from 90d High</div><div class="metric-value" style="font-size:16px;">${dd90 !== null ? fmtPct(dd90) : '—'}</div></div>
+    </div>
+    ${renderDrawdownGauge(worstDd)}
+    <div style="margin-top:16px;">${renderDrawdownProtocols(worstDd)}</div>
+  </div>
+
+  <div class="card">
     <div class="section-header">Drift Monitor</div>
     <div class="grid grid-4" style="margin-bottom:14px;">
       <div><div class="metric-label">Overweight Breaches</div><div class="metric-value" style="font-size:18px;">${overweightBreaches.length}</div></div>
@@ -2022,18 +2030,6 @@ function renderRebalancingTab() {
       ${buyCards}
     </details>
   </div>` : ''}
-
-  <div class="card">
-    <div class="section-header">Market Drawdown Monitor</div>
-    <div class="grid grid-4">
-      <div><div class="metric-label">SPX (S&amp;P 500 Index)</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div></div>
-      <div><div class="metric-label">Day Change</div><div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)}</div></div>
-      <div><div class="metric-label">Drawdown from 52wk High</div><div class="metric-value" style="font-size:16px;">${dd52 !== null ? fmtPct(dd52) : '—'}</div></div>
-      <div><div class="metric-label">Drawdown from 90d High</div><div class="metric-value" style="font-size:16px;">${dd90 !== null ? fmtPct(dd90) : '—'}</div></div>
-    </div>
-    ${renderDrawdownGauge(worstDd)}
-    <div style="margin-top:16px;">${renderDrawdownProtocols(worstDd)}</div>
-  </div>
 
   ${renderSemiAnnualReview(metrics)}
 
@@ -2575,16 +2571,6 @@ function renderSettings() {
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">Cash (USD)</label>
-        <input type="number" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Cash (THB)</label>
-        <input type="number" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
         <label class="form-label">Start Date</label>
         <input type="date" class="form-input" data-setting="startDate" value="${esc(appData.settings.startDate)}">
       </div>
@@ -2831,6 +2817,29 @@ function removePosition(ticker) {
   toast('Position removed', 'success');
 }
 
+function openEditCashModal() {
+  document.getElementById('modal-root').innerHTML = `
+  <div class="modal-overlay" data-action="modal-overlay-close">
+    <div class="modal" data-action="noop">
+      <h3>Edit Cash</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Cash (USD)</label>
+          <input type="number" step="any" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cash (THB)</label>
+          <input type="number" step="any" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
+        </div>
+      </div>
+      <div class="metric-sub" style="margin-bottom:10px;">Included in portfolio weight and Dashboard totals.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="modal-overlay-close">Done</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function openEditPositionModal(ticker) {
   const pos = appData.positions.find(p => p.ticker === ticker);
   if (!pos) { toast('Position not found', 'error'); return; }
@@ -2998,6 +3007,12 @@ function attachEventDelegation() {
         openEditPositionModal(target.dataset.ticker);
         break;
       case 'confirm-edit-position': confirmEditPosition(target.dataset.originalTicker); break;
+      case 'open-edit-cash-modal':
+        openRowMenuTicker = null;
+        openRowMenuPos = null;
+        renderAll();
+        openEditCashModal();
+        break;
       case 'remove-position':
         openRowMenuTicker = null;
         openRowMenuPos = null;
