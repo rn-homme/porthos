@@ -48,7 +48,7 @@
   --neutral-warm-700: #504639;
   --neutral-warm-800: #362E25;
   --neutral-warm-900: #211B15;
-  --neutral-warm-950: #16120D;
+  --neutral-warm-950: #1E1B18;
 
   /* Neutrals — cool (blue-tinted) */
   --neutral-cool-0:   #FCFCFD;
@@ -287,23 +287,54 @@ input,select,textarea{font-family:inherit;}
 /* ============================================================
    PRIMITIVES — CARDS, GRIDS, BADGES, PILLS
    ============================================================ */
-.grid{display:grid;gap:14px;}
+.grid{display:grid;gap:14px;margin-bottom:14px;align-items:stretch;}
 .grid-4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
+/* Fixed (non-auto-fit) 4-column row for the Dashboard's top metric cards.
+   auto-fit's minmax(220px,1fr) can fall back to 3 columns at container
+   widths around 900-950px (not enough room for a 4th 220px column), which
+   wraps the 4th card into its own grid row with a different stretch height
+   than the first three — this guarantees exactly 4 (then 2, then 1) equal
+   columns at every width instead. */
+.metrics-row{display:grid;gap:14px;margin-bottom:14px;align-items:stretch;grid-template-columns:repeat(4,1fr);}
+@media (max-width:900px){.metrics-row{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:480px){.metrics-row{grid-template-columns:1fr;}}
 .card{
   background:var(--card);
   border:1px solid var(--card-border);
   border-radius:12px;
   padding:18px;
+  height:100%;
+  box-sizing:border-box;
 }
 .card.highlight{border:1.5px solid var(--accent);}
 .card+.card{margin-top:14px;}
+/* .card+.card assumes cards are stacked vertically in normal flow (the
+   common case). .metrics-row lays its 4 cards out horizontally as grid
+   siblings instead, where that same adjacent-sibling margin-top pushes
+   cards 2-4 down within their grid cells while card 1 (unmatched, no
+   preceding sibling) stays flush — misaligning all 4 despite equal
+   height. Cancel it inside any grid row of cards. */
+.metrics-row > .card,
+.grid > .card{margin-top:0;}
 .section-header{
   text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
   font-size:11px;font-weight:600;margin:0 0 10px;
 }
+summary.section-header{cursor:pointer;user-select:none;}
+summary.section-header::marker{color:var(--text-muted);}
+details > summary.section-header{margin-bottom:0;}
+details[open] > summary.section-header{margin-bottom:10px;}
 .metric-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 .metric-value{font-size:22px;font-weight:700;color:var(--text);}
 .metric-sub{font-size:12px;color:var(--text-secondary);margin-top:4px;}
+.metric-dual{display:flex;flex-direction:column;gap:8px;margin-top:2px;}
+.metric-dual-item{min-width:0;}
+.metric-dual-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;}
+.metric-dual-value{font-size:17px;font-weight:700;color:var(--text);overflow-wrap:break-word;}
+
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.icon-spin{display:inline-flex;animation:spin .8s linear infinite;vertical-align:-3px;}
+.icon-spin svg{vertical-align:baseline;}
 
 .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:var(--text-on-primary);white-space:nowrap;}
 .badge-success{background:var(--success);}
@@ -351,6 +382,19 @@ input,select,textarea{font-family:inherit;}
 .btn-sm{padding:5px 10px;font-size:12px;}
 .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
 
+.row-menu-wrap{position:relative;display:inline-block;}
+.row-menu{
+  background:var(--card-raised);border:1px solid var(--card-border);border-radius:8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);min-width:120px;z-index:150;overflow:hidden;
+}
+.row-menu-item{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:8px 12px;background:transparent;border:none;color:var(--text);
+  font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
+}
+.row-menu-item:hover{background:var(--bg);}
+.row-menu-item.danger{color:var(--danger);}
+
 /* ============================================================
    FORMS
    ============================================================ */
@@ -363,11 +407,26 @@ input,select,textarea{font-family:inherit;}
 .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);}
 .form-textarea{resize:vertical;min-height:60px;}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+.appearance-row{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;}
+.segmented{display:inline-flex;background:var(--bg);border:1px solid var(--card-border);border-radius:999px;padding:3px;gap:2px;}
+.segmented-btn{
+  background:transparent;border:none;color:var(--text-secondary);
+  padding:7px 18px;border-radius:999px;font-size:13px;font-weight:600;
+  cursor:pointer;transition:background .15s,color .15s;
+}
+.segmented-btn.active{background:var(--accent-solid);color:var(--text-on-primary);}
+.segmented-btn:not(.active):hover{color:var(--text);}
+.swatch-row{display:flex;gap:10px;align-items:center;padding:4px 0;}
+.swatch{
+  width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;padding:0;
+  box-shadow:0 0 0 1px var(--card-border) inset;transition:transform .1s,box-shadow .15s;
+}
+.swatch:hover{transform:scale(1.08);}
+.swatch.active{box-shadow:0 0 0 2px var(--bg-surface), 0 0 0 4px var(--text-primary);}
 .form-inline{display:flex;align-items:center;gap:8px;}
 .form-inline .form-input{width:auto;}
 .inline-result{font-size:12px;margin-top:8px;}
-.table-input{width:90px;padding:5px 8px;font-size:13px;}
-.table-input-sm{width:64px;}
 
 /* ============================================================
    TABLES
@@ -537,6 +596,12 @@ let sessionHigh = null;    // { price, since }
 let lastRefresh = null;
 let currentTab = 1;
 let isLoadingPrices = false;
+// Whole-operation loading flags — set true (and rendered) *before* the async
+// work starts, unlike isLoadingPrices which fetchAllPrices only flips mid-flight
+// after fx/spy have already been fetched, so those flags alone under-report
+// how long the overall refresh is running.
+let isMarketRefreshing = false;
+let isNewsRefreshing = false;
 let gistConfigured = false;
 
 // Phase 2 runtime state (not persisted to Gist, except where noted).
@@ -556,6 +621,13 @@ let themePrefs = {
   neutral: document.documentElement.getAttribute('data-neutral') || 'cool',
   primary: document.documentElement.getAttribute('data-primary') || 'indigo'
 };
+
+// Ticker whose Portfolio-tab row menu (Edit/Remove) is currently open, or null.
+// The menu renders with position:fixed at openRowMenuPos (viewport coordinates
+// captured when the toggle button was clicked) rather than position:absolute,
+// since the table's horizontal scroll container would otherwise clip it.
+let openRowMenuTicker = null;
+let openRowMenuPos = null;
 
 /* ================================================================
    2. UTILITIES
@@ -1073,7 +1145,8 @@ const ICONS = {
   cloud: '<circle cx="8.5" cy="14" r="4"/><circle cx="15" cy="12" r="5"/><rect x="6.5" y="15" width="12.5" height="5" rx="2.5"/>',
   key: '<circle cx="8" cy="8" r="4"/><line x1="11" y1="11" x2="20" y2="20"/><line x1="15.5" y1="15.5" x2="18.5" y2="12.5"/><line x1="17.5" y1="17.5" x2="20.5" y2="14.5"/>',
   sort: '<polyline points="7,4 7,20"/><polyline points="3.5,7 7,3.5 10.5,7"/><polyline points="17,4 17,20"/><polyline points="13.5,17 17,20.5 20.5,17"/>',
-  check: '<polyline points="4,12 9,17 20,5"/>'
+  check: '<polyline points="4,12 9,17 20,5"/>',
+  moreVertical: '<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>'
 };
 function icon(name, size) {
   size = size || 16;
@@ -1208,13 +1281,18 @@ function renderDashboard() {
   const metrics = computePortfolioMetrics();
   const { cashUSD, cashTHB, cashTotalTHB } = computeCashTotals();
   const totalValueTHB = metrics.totalValueUSD * (fx.rate || 0);
+  const totalValueWithCashTHB = metrics.grandTotalUSD * (fx.rate || 0);
   const totalPlPct = metrics.totalCostUSD > 0 ? ((metrics.totalValueUSD - metrics.totalCostUSD) / metrics.totalCostUSD) * 100 : null;
+  const totalPlPctWithCash = metrics.totalCostUSD > 0 ? ((metrics.grandTotalUSD - metrics.totalCostUSD) / metrics.totalCostUSD) * 100 : null;
 
-  let fxBadgeClass = 'badge-muted';
+  // THB is "strong" when it takes fewer THB to buy 1 USD (a low rate) — that's
+  // the favorable moment to convert THB into USD. A high rate means THB has
+  // weakened against the dollar.
+  let fxBadgeClass = 'badge-muted', fxLabel = 'N/A';
   if (fx.rate) {
-    if (fx.rate > 31) fxBadgeClass = 'badge-success';
-    else if (fx.rate >= 30) fxBadgeClass = 'badge-warning';
-    else fxBadgeClass = 'badge-danger';
+    if (fx.rate < 30) { fxBadgeClass = 'badge-success'; fxLabel = 'STRONG'; }
+    else if (fx.rate <= 31) { fxBadgeClass = 'badge-warning'; fxLabel = 'WATCH'; }
+    else { fxBadgeClass = 'badge-danger'; fxLabel = 'WEAK'; }
   }
 
   // --- Row 2: Investment Horizon ---
@@ -1238,16 +1316,32 @@ function renderDashboard() {
   const spyDrawdown = (sessionHigh && sessionHigh.price) ? ((spy.price - sessionHigh.price) / sessionHigh.price) * 100 : null;
 
   return `
-  <div class="grid grid-4">
+  <div class="metrics-row">
     <div class="card">
       <div class="metric-label">Total Portfolio Value</div>
-      <div class="metric-value" data-animate-value="${totalValueTHB}" data-animate-format="THB">${fmtTHB(totalValueTHB)}</div>
-      <div class="metric-sub">${fmtUSD(metrics.totalValueUSD)}</div>
+      <div class="metric-dual">
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Excl. Cash</div>
+          <div class="metric-dual-value" data-animate-value="${totalValueTHB}" data-animate-format="THB">${fmtTHB(totalValueTHB)}</div>
+        </div>
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Incl. Cash</div>
+          <div class="metric-dual-value">${fmtTHB(totalValueWithCashTHB)}</div>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="metric-label">Total P/L %</div>
-      <div class="metric-value ${totalPlPct === null ? '' : (totalPlPct >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPct)}</div>
-      <div class="metric-sub">${fmtUSD(metrics.totalValueUSD - metrics.totalCostUSD)} vs cost basis</div>
+      <div class="metric-dual">
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Excl. Cash</div>
+          <div class="metric-dual-value ${totalPlPct === null ? '' : (totalPlPct >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPct)}</div>
+        </div>
+        <div class="metric-dual-item">
+          <div class="metric-dual-label">Incl. Cash</div>
+          <div class="metric-dual-value ${totalPlPctWithCash === null ? '' : (totalPlPctWithCash >= 0 ? 'text-success' : 'text-danger')}">${fmtPct(totalPlPctWithCash)}</div>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="metric-label">Cash</div>
@@ -1256,13 +1350,51 @@ function renderDashboard() {
     </div>
     <div class="card">
       <div class="metric-label">USD/THB Rate</div>
-      <div class="metric-value">${fx.rate ? fx.rate.toFixed(2) : '—'} <span class="badge ${fxBadgeClass}">${fx.rate ? (fx.rate > 31 ? 'STRONG' : fx.rate >= 30 ? 'WATCH' : 'WEAK') : 'N/A'}</span></div>
+      <div class="metric-value">${fx.rate ? fx.rate.toFixed(2) : '—'} <span class="badge ${fxBadgeClass}">${fxLabel}</span></div>
       <div class="metric-sub">Cross-check Dime! app for transactions${fx.cached ? ' · (cached)' : ''}</div>
     </div>
   </div>
 
   <div class="card">
-    <div class="section-header">Investment Horizon</div>
+    <details open>
+    <summary class="section-header">Market Snapshot</summary>
+    <div class="grid grid-4">
+      <div>
+        <div class="metric-label">SPX (S&amp;P 500 Index)</div>
+        <div class="metric-value">${isMarketRefreshing ? '<span class="skeleton">$0,000.00</span>' : (spy.price ? fmtUSD(spy.price) : '—')}${spy.cached && !isMarketRefreshing ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''}</div>
+      </div>
+      <div>
+        <div class="metric-label">Day Change</div>
+        <div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${isMarketRefreshing ? '<span class="skeleton">+0.00% ($0.00)</span>' : `${fmtPct(spy.dayChangePct)} (${fmtUSD(spy.dayChangeAbs)})`}</div>
+      </div>
+      <div>
+        <div class="metric-label">Drawdown from Session High</div>
+        <div class="metric-value" style="font-size:16px;">${isMarketRefreshing ? '<span class="skeleton">0.00%</span>' : (spyDrawdown !== null ? fmtPct(spyDrawdown) : '—')}</div>
+        <div class="metric-sub">52-week high tracking builds over time</div>
+      </div>
+      <div>
+        <div class="metric-label">Last Refresh</div>
+        <div class="metric-value" style="font-size:14px;">${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : 'never'}</div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" data-action="refresh-market" ${isMarketRefreshing ? 'disabled' : ''}>${isMarketRefreshing ? `<span class="icon-spin">${icon('refresh')}</span> Refreshing…` : `${icon('refresh')} Refresh`}</button>
+    </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details open>
+    <summary class="section-header">Active Alerts</summary>
+    ${alerts.length === 0
+      ? '<div class="alert-box alert-success">✓ All systems nominal</div>'
+      : alerts.map(a => `<div class="alert-box alert-${a.type === 'accent' ? 'warning' : a.type}">${a.html}</div>`).join('')}
+    </details>
+  </div>
+
+  <div class="card">
+    <details open>
+    <summary class="section-header">Investment Horizon</summary>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Start Date</label>
@@ -1280,61 +1412,17 @@ function renderDashboard() {
       <div class="progress-milestone" style="left:75%"><span>75%</span></div>
     </div>
     <div class="metric-sub" style="margin-top:14px;">${elapsed.years}y ${elapsed.months}m elapsed · ${remaining.years}y ${remaining.months}m remaining (${pctElapsed.toFixed(1)}%)</div>
+    </details>
   </div>
 
   <div class="card">
-    <div class="section-header">Goal Progress</div>
-    <div class="metric-value">${fmtTHB(totalValueTHB)} <span class="text-muted" style="font-size:13px;font-weight:400;">/ ${fmtTHB(appData.settings.goalTHB)}</span></div>
+    <details open>
+    <summary class="section-header">Goal Progress</summary>
     <div class="progress-track"><div class="progress-fill" style="width:${pctGoal}%;background:var(--success);"></div></div>
     <div class="metric-sub" style="margin-bottom:14px;">${pctGoal.toFixed(1)}% of goal reached</div>
-    <div class="table-wrap">
-      <table style="min-width:520px;">
-        <thead><tr><th>Scenario</th><th>CAGR</th><th>Projected Terminal Value (@ target date)</th><th>Est. Goal Year</th></tr></thead>
-        <tbody>
-          ${scenarios.map(s => `
-            <tr class="${s.isEarliest ? 'row-highlight' : ''}">
-              <td>${esc(s.label)}</td>
-              <td>${s.cagrPct}%</td>
-              <td>${fmtTHB(s.terminalValue)}</td>
-              <td class="${s.isEarliest ? 'text-success' : ''}">${s.goalYear ? s.goalYear : '> 40yr'}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div class="section-header" style="margin-top:18px;">Projection Chart</div>
     ${renderProjectionChartSVG(scenarios, totalValueTHB)}
-    <div class="metric-sub" style="margin-top:6px;">Scenario CAGR assumptions are editable in the Projection tab.</div>
-  </div>
-
-  <div class="card">
-    <div class="section-header">Active Alerts</div>
-    ${alerts.length === 0
-      ? '<div class="alert-box alert-success">✓ All systems nominal</div>'
-      : alerts.map(a => `<div class="alert-box alert-${a.type === 'accent' ? 'warning' : a.type}">${a.html}</div>`).join('')}
-  </div>
-
-  <div class="card">
-    <div class="section-header">Market Snapshot</div>
-    <div class="grid grid-4">
-      <div>
-        <div class="metric-label">S&amp;P 500</div>
-        <div class="metric-value">${spy.price ? fmtUSD(spy.price) : '—'}${spy.cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''}</div>
-      </div>
-      <div>
-        <div class="metric-label">Day Change</div>
-        <div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)} (${fmtUSD(spy.dayChangeAbs)})</div>
-      </div>
-      <div>
-        <div class="metric-label">Drawdown from Session High</div>
-        <div class="metric-value" style="font-size:16px;">${spyDrawdown !== null ? fmtPct(spyDrawdown) : '—'}</div>
-        <div class="metric-sub">52-week high tracking builds over time</div>
-      </div>
-      <div>
-        <div class="metric-label">Last Refresh</div>
-        <div class="metric-value" style="font-size:14px;">${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : 'never'}</div>
-      </div>
-    </div>
-    <div class="btn-row"><button class="btn" data-action="refresh-market">${icon('refresh')} Refresh</button></div>
+    <div class="metric-sub" style="margin-top:6px;">Full scenario breakdown and CAGR assumptions are in the Projection tab.</div>
+    </details>
   </div>
   `;
 }
@@ -1366,29 +1454,41 @@ function renderPortfolio() {
   const rowsHtml = metrics.rows.map(r => {
     const priceCell = !apiConfig.finnhubKey
       ? `${icon('key')} Add Finnhub API key in Settings`
-      : (r.price === null
-        ? (isLoadingPrices ? '<span class="skeleton">$000.00</span>' : '—')
-        : fmtUSD(r.price) + (prices[r.pos.ticker] && prices[r.pos.ticker].cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : ''));
+      : (isMarketRefreshing
+        ? '<span class="skeleton">$000.00</span>'
+        : (r.price === null
+          ? '—'
+          : fmtUSD(r.price) + (prices[r.pos.ticker] && prices[r.pos.ticker].cached ? ' <span class="text-muted" style="font-size:11px;">(cached)</span>' : '')));
     const dayChg = prices[r.pos.ticker] ? prices[r.pos.ticker].dayChangePct : null;
+    const dayChgCell = !apiConfig.finnhubKey ? '—' : (isMarketRefreshing ? '<span class="skeleton">+0.00%</span>' : (dayChg === null ? '—' : fmtPct(dayChg)));
     const valueTHB = r.value * (fx.rate || 0);
     const driftClass = Math.abs(r.drift) > r.threshold ? 'text-danger' : (Math.abs(r.drift) > r.threshold - 1 ? 'text-warning' : 'text-secondary');
     return `
     <tr>
       <td class="ticker-cell">${esc(r.pos.ticker)}</td>
       <td><span class="pill pill-${r.pos.tier}">${r.pos.tier}</span></td>
-      <td><input type="number" step="any" class="form-input table-input" data-position-field="shares" data-ticker="${esc(r.pos.ticker)}" value="${Number(r.pos.shares.toFixed(6))}"></td>
-      <td><input type="number" step="any" class="form-input table-input" data-position-field="avgCost" data-ticker="${esc(r.pos.ticker)}" value="${Number(r.pos.avgCost.toFixed(4))}"></td>
+      <td>${fmtNum(r.pos.shares, 4)}</td>
+      <td>${fmtUSD(r.pos.avgCost)}</td>
       <td>${priceCell}</td>
-      <td class="${dayChg === null ? '' : (dayChg >= 0 ? 'text-success' : 'text-danger')}">${dayChg === null ? '—' : fmtPct(dayChg)}</td>
+      <td class="${dayChg === null ? '' : (dayChg >= 0 ? 'text-success' : 'text-danger')}">${dayChgCell}</td>
       <td>${fmtUSD(r.value)}</td>
       <td>${fmtTHB(valueTHB)}</td>
       <td class="${r.plPct === null ? '' : (r.plPct >= 0 ? 'text-success' : 'text-danger')}" style="font-weight:700;">${r.plPct === null ? '—' : fmtPct(r.plPct)}</td>
       <td>${r.currentWeight.toFixed(1)}%</td>
-      <td><input type="number" step="any" class="form-input table-input table-input-sm" data-position-field="targetWeight" data-ticker="${esc(r.pos.ticker)}" value="${r.pos.targetWeight}"></td>
+      <td>${r.pos.targetWeight}%</td>
       <td class="${driftClass}">${fmtPct(r.drift, 1)}</td>
       <td>${r.score.toFixed(1)}</td>
       <td>${actionBadgeHtml(r.action)}</td>
-      <td><button class="btn btn-sm btn-danger" data-action="remove-position" data-ticker="${esc(r.pos.ticker)}">✕</button></td>
+      <td>
+        <div class="row-menu-wrap">
+          <button class="btn btn-sm" data-action="toggle-row-menu" data-ticker="${esc(r.pos.ticker)}" aria-label="Row actions">${icon('moreVertical')}</button>
+          ${openRowMenuTicker === r.pos.ticker && openRowMenuPos ? `
+          <div class="row-menu" style="position:fixed;top:${openRowMenuPos.top}px;left:${openRowMenuPos.left}px;">
+            <button class="row-menu-item" data-action="open-edit-position-modal" data-ticker="${esc(r.pos.ticker)}">${icon('edit')} Edit</button>
+            <button class="row-menu-item danger" data-action="remove-position" data-ticker="${esc(r.pos.ticker)}">${icon('trash')} Remove</button>
+          </div>` : ''}
+        </div>
+      </td>
     </tr>`;
   }).join('');
 
@@ -1409,22 +1509,30 @@ function renderPortfolio() {
   </div>
 
   <div class="card">
-    <div class="section-header">Cash</div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Cash (USD)</label>
-        <input type="number" step="any" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Cash (THB)</label>
-        <input type="number" step="any" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div class="section-header" style="margin-bottom:0;">Cash</div>
+      <div class="row-menu-wrap">
+        <button class="btn btn-sm" data-action="toggle-row-menu" data-ticker="__cash__" aria-label="Cash actions">${icon('moreVertical')}</button>
+        ${openRowMenuTicker === '__cash__' && openRowMenuPos ? `
+        <div class="row-menu" style="position:fixed;top:${openRowMenuPos.top}px;left:${openRowMenuPos.left}px;">
+          <button class="row-menu-item" data-action="open-edit-cash-modal">${icon('edit')} Edit</button>
+        </div>` : ''}
       </div>
     </div>
-    <div class="metric-sub">Included in portfolio weight and Dashboard totals. Also editable in Settings.</div>
+    <div class="form-row" style="margin-top:10px;">
+      <div>
+        <div class="metric-label">Cash (USD)</div>
+        <div class="metric-value" style="font-size:16px;">${fmtUSD(appData.settings.cashUSD)}</div>
+      </div>
+      <div>
+        <div class="metric-label">Cash (THB)</div>
+        <div class="metric-value" style="font-size:16px;">${fmtTHB(appData.settings.cashTHB)}</div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
-    <div class="metric-sub" style="margin-bottom:10px;">Shares, Avg Cost, and Target % are editable directly in the table. Shares/Avg Cost set your starting position — any DCA entries logged in the DCA Log tab are applied on top automatically.</div>
+    <div class="section-header">Portfolio Breakdown</div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1438,7 +1546,7 @@ function renderPortfolio() {
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" data-action="open-add-position-modal">＋ Add Position</button>
-      <button class="btn" data-action="refresh-market">${icon('refresh')} Refresh All Prices</button>
+      <button class="btn" data-action="refresh-market" ${isMarketRefreshing ? 'disabled' : ''}>${isMarketRefreshing ? `<span class="icon-spin">${icon('refresh')}</span> Refreshing…` : `${icon('refresh')} Refresh All Prices`}</button>
       <span class="metric-sub" style="align-self:center;">Last updated: ${lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : '—'}</span>
     </div>
   </div>
@@ -1603,8 +1711,10 @@ function renderDcaEngineTab() {
   </div>
 
   <div class="card">
-    <div class="section-header">DCA Step-up Progress</div>
+    <details open>
+    <summary class="section-header">DCA Step-up Progress</summary>
     ${renderDcaStepupProgress()}
+    </details>
   </div>
 
   <div class="card" style="text-align:center;">
@@ -1612,7 +1722,8 @@ function renderDcaEngineTab() {
   </div>
 
   <div class="card">
-    <div class="section-header">DCA Log History</div>
+    <details open>
+    <summary class="section-header">DCA Log History</summary>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1634,6 +1745,7 @@ function renderDcaEngineTab() {
         </tbody>
       </table>
     </div>
+    </details>
   </div>
   `;
 }
@@ -1696,7 +1808,8 @@ function renderSemiAnnualReview(metrics) {
 
   return `
   <div class="card">
-    <div class="section-header">Semi-Annual Review — ${esc(halfLabel)}</div>
+    <details open>
+    <summary class="section-header">Semi-Annual Review — ${esc(halfLabel)}</summary>
     <div class="metric-sub" style="margin-bottom:16px;">Next review due: ${nextReview.toISOString().slice(0, 10)}</div>
 
     <div class="form-group">
@@ -1745,6 +1858,7 @@ function renderSemiAnnualReview(metrics) {
     </div>
 
     <div class="btn-row"><button class="btn btn-primary" data-action="save-review-notes">${icon('save')} Save Review Notes</button></div>
+    </details>
   </div>`;
 }
 
@@ -1874,6 +1988,18 @@ function renderRebalancingTab() {
 
   return `
   <div class="card">
+    <div class="section-header">Market Drawdown Monitor</div>
+    <div class="grid grid-4">
+      <div><div class="metric-label">SPX (S&amp;P 500 Index)</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div></div>
+      <div><div class="metric-label">Day Change</div><div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)}</div></div>
+      <div><div class="metric-label">Drawdown from 52wk High</div><div class="metric-value" style="font-size:16px;">${dd52 !== null ? fmtPct(dd52) : '—'}</div></div>
+      <div><div class="metric-label">Drawdown from 90d High</div><div class="metric-value" style="font-size:16px;">${dd90 !== null ? fmtPct(dd90) : '—'}</div></div>
+    </div>
+    ${renderDrawdownGauge(worstDd)}
+    <div style="margin-top:16px;">${renderDrawdownProtocols(worstDd)}</div>
+  </div>
+
+  <div class="card">
     <div class="section-header">Drift Monitor</div>
     <div class="grid grid-4" style="margin-bottom:14px;">
       <div><div class="metric-label">Overweight Breaches</div><div class="metric-value" style="font-size:18px;">${overweightBreaches.length}</div></div>
@@ -1891,27 +2017,19 @@ function renderRebalancingTab() {
 
   ${overweightBreaches.length ? `
   <div class="card">
-    <div class="section-header">Trim Planner</div>
-    ${trimCards}
+    <details open>
+      <summary class="section-header">Trim Planner</summary>
+      ${trimCards}
+    </details>
   </div>` : ''}
 
   ${underweightBreaches.length ? `
   <div class="card">
-    <div class="section-header">Buy Planner</div>
-    ${buyCards}
+    <details open>
+      <summary class="section-header">Buy Planner</summary>
+      ${buyCards}
+    </details>
   </div>` : ''}
-
-  <div class="card">
-    <div class="section-header">Market Drawdown Monitor</div>
-    <div class="grid grid-4">
-      <div><div class="metric-label">S&amp;P 500</div><div class="metric-value" style="font-size:16px;">${spy.price ? fmtUSD(spy.price) : '—'}</div></div>
-      <div><div class="metric-label">Day Change</div><div class="metric-value ${spy.dayChangePct >= 0 ? 'text-success' : 'text-danger'}" style="font-size:16px;">${fmtPct(spy.dayChangePct)}</div></div>
-      <div><div class="metric-label">Drawdown from 52wk High</div><div class="metric-value" style="font-size:16px;">${dd52 !== null ? fmtPct(dd52) : '—'}</div></div>
-      <div><div class="metric-label">Drawdown from 90d High</div><div class="metric-value" style="font-size:16px;">${dd90 !== null ? fmtPct(dd90) : '—'}</div></div>
-    </div>
-    ${renderDrawdownGauge(worstDd)}
-    <div style="margin-top:16px;">${renderDrawdownProtocols(worstDd)}</div>
-  </div>
 
   ${renderSemiAnnualReview(metrics)}
 
@@ -2349,10 +2467,12 @@ function renderMarketNewsTab() {
     return `<button class="btn btn-sm ${newsState.filter === f ? 'btn-primary' : ''}" data-action="filter-news" data-filter="${esc(f)}">${esc(label)}</button>`;
   }).join('');
 
+  const newsSkeleton = '<div class="alert-box" style="display:block;"><span class="skeleton" style="display:block;width:60%;height:10px;margin-bottom:8px;">tt</span><span class="skeleton" style="display:block;width:90%;height:14px;">tt</span></div>'.repeat(3);
+
   return `
   <div class="card">
     <div class="btn-row" style="margin-top:0;">
-      <button class="btn btn-primary" data-action="refresh-news">${icon('refresh')} Refresh News</button>
+      <button class="btn btn-primary" data-action="refresh-news" ${isNewsRefreshing ? 'disabled' : ''}>${isNewsRefreshing ? `<span class="icon-spin">${icon('refresh')}</span> Refreshing…` : `${icon('refresh')} Refresh News`}</button>
       <span class="metric-sub" style="align-self:center;">Last refreshed: ${newsState.lastRefresh ? new Date(newsState.lastRefresh).toLocaleTimeString() : 'never'}</span>
     </div>
     <div class="btn-row">${filterButtons}</div>
@@ -2360,12 +2480,12 @@ function renderMarketNewsTab() {
 
   <div class="card">
     <div class="section-header">Holdings News</div>
-    ${holdingsShown.length === 0 ? '<div class="metric-sub text-muted">No holdings news loaded yet. Click Refresh News.</div>' : holdingsShown.map(i => newsCardHtml(i, false)).join('')}
+    ${isNewsRefreshing ? newsSkeleton : (holdingsShown.length === 0 ? '<div class="metric-sub text-muted">No holdings news loaded yet. Click Refresh News.</div>' : holdingsShown.map(i => newsCardHtml(i, false)).join(''))}
   </div>
 
   <div class="card">
     <div class="section-header">Market &amp; Macro News</div>
-    ${macroShown.length === 0 ? '<div class="metric-sub text-muted">No macro news loaded yet. Click Refresh News.</div>' : macroShown.map(i => newsCardHtml(i, true)).join('')}
+    ${isNewsRefreshing ? newsSkeleton : (macroShown.length === 0 ? '<div class="metric-sub text-muted">No macro news loaded yet. Click Refresh News.</div>' : macroShown.map(i => newsCardHtml(i, true)).join(''))}
   </div>
   `;
 }
@@ -2374,6 +2494,10 @@ function renderMarketNewsTab() {
    10. RENDERING — TAB 8: SETTINGS
    ================================================================ */
 const PRIMARY_FAMILY_LABELS = { indigo: 'Indigo', clay: 'Clay', forest: 'Forest', burgundy: 'Burgundy', slate: 'Slate' };
+const PRIMARY_FAMILY_SWATCH = {
+  indigo: 'var(--indigo-500)', clay: 'var(--clay-500)', forest: 'var(--forest-500)',
+  burgundy: 'var(--burgundy-500)', slate: 'var(--slate-500)'
+};
 
 function renderSettings() {
   const dcaYears = Object.keys(appData.dcaSchedule).sort();
@@ -2381,29 +2505,29 @@ function renderSettings() {
   return `
   <div class="card">
     <div class="section-header">Appearance</div>
-    <div class="form-row" style="grid-template-columns:repeat(3,1fr);">
-      <div class="form-group">
+    <div class="appearance-row">
+      <div>
         <label class="form-label">Theme</label>
-        <select class="form-select" data-theme-pref="theme">
-          <option value="dark" ${themePrefs.theme === 'dark' ? 'selected' : ''}>Dark</option>
-          <option value="light" ${themePrefs.theme === 'light' ? 'selected' : ''}>Light</option>
-        </select>
+        <div class="segmented">
+          <button type="button" class="segmented-btn ${themePrefs.theme === 'light' ? 'active' : ''}" data-action="set-theme-pref" data-theme-pref="theme" data-value="light">Light</button>
+          <button type="button" class="segmented-btn ${themePrefs.theme === 'dark' ? 'active' : ''}" data-action="set-theme-pref" data-theme-pref="theme" data-value="dark">Dark</button>
+        </div>
       </div>
-      <div class="form-group">
+      <div>
         <label class="form-label">Neutral Tone</label>
-        <select class="form-select" data-theme-pref="neutral">
-          <option value="cool" ${themePrefs.neutral === 'cool' ? 'selected' : ''}>Cool</option>
-          <option value="warm" ${themePrefs.neutral === 'warm' ? 'selected' : ''}>Warm</option>
-        </select>
+        <div class="segmented">
+          <button type="button" class="segmented-btn ${themePrefs.neutral === 'warm' ? 'active' : ''}" data-action="set-theme-pref" data-theme-pref="neutral" data-value="warm">Warm</button>
+          <button type="button" class="segmented-btn ${themePrefs.neutral === 'cool' ? 'active' : ''}" data-action="set-theme-pref" data-theme-pref="neutral" data-value="cool">Cool</button>
+        </div>
       </div>
-      <div class="form-group">
+      <div>
         <label class="form-label">Primary Family</label>
-        <select class="form-select" data-theme-pref="primary">
-          ${Object.keys(PRIMARY_FAMILY_LABELS).map(p => `<option value="${p}" ${themePrefs.primary === p ? 'selected' : ''}>${PRIMARY_FAMILY_LABELS[p]}</option>`).join('')}
-        </select>
+        <div class="swatch-row">
+          ${Object.keys(PRIMARY_FAMILY_LABELS).map(p => `<button type="button" class="swatch ${themePrefs.primary === p ? 'active' : ''}" data-action="set-theme-pref" data-theme-pref="primary" data-value="${p}" title="${PRIMARY_FAMILY_LABELS[p]}" aria-label="${PRIMARY_FAMILY_LABELS[p]}" style="background:${PRIMARY_FAMILY_SWATCH[p]};"></button>`).join('')}
+        </div>
       </div>
     </div>
-    <div class="metric-sub">Applies instantly and is remembered on this device (not synced via Gist). Core/Growth/Moonshot tier colors stay fixed regardless of Primary Family, so tiers remain distinguishable from each other and from the accent color.</div>
+    <div class="metric-sub" style="margin-top:14px;">Applies instantly and is remembered on this device (not synced via Gist). Core/Growth/Moonshot tier colors stay fixed regardless of Primary Family, so tiers remain distinguishable from each other and from the accent color.</div>
   </div>
 
   <div class="card">
@@ -2443,16 +2567,6 @@ function renderSettings() {
       <div class="form-group">
         <label class="form-label">Min Cash Buffer ฿</label>
         <input type="number" class="form-input" data-setting="cashBuffer" value="${appData.settings.cashBuffer}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Cash (USD)</label>
-        <input type="number" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Cash (THB)</label>
-        <input type="number" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
       </div>
     </div>
     <div class="form-row">
@@ -2703,6 +2817,99 @@ function removePosition(ticker) {
   toast('Position removed', 'success');
 }
 
+function openEditCashModal() {
+  document.getElementById('modal-root').innerHTML = `
+  <div class="modal-overlay" data-action="modal-overlay-close">
+    <div class="modal" data-action="noop">
+      <h3>Edit Cash</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Cash (USD)</label>
+          <input type="number" step="any" class="form-input" data-setting="cashUSD" value="${appData.settings.cashUSD}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cash (THB)</label>
+          <input type="number" step="any" class="form-input" data-setting="cashTHB" value="${appData.settings.cashTHB}">
+        </div>
+      </div>
+      <div class="metric-sub" style="margin-bottom:10px;">Included in portfolio weight and Dashboard totals.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="modal-overlay-close">Done</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function openEditPositionModal(ticker) {
+  const pos = appData.positions.find(p => p.ticker === ticker);
+  if (!pos) { toast('Position not found', 'error'); return; }
+  document.getElementById('modal-root').innerHTML = `
+  <div class="modal-overlay" data-action="modal-overlay-close">
+    <div class="modal" data-action="noop">
+      <h3>Edit Position</h3>
+      <div class="form-group"><label class="form-label">Ticker</label>
+        <input type="text" class="form-input" id="edit-pos-ticker" value="${esc(pos.ticker)}" style="text-transform:uppercase;"></div>
+      <div class="form-group"><label class="form-label">Tier</label>
+        <select class="form-select" id="edit-pos-tier">
+          ${['Core', 'Growth', 'Moonshot'].map(t => `<option value="${t}" ${pos.tier === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Shares</label>
+          <input type="number" step="any" class="form-input" id="edit-pos-shares" value="${Number(pos.shares.toFixed(6))}"></div>
+        <div class="form-group"><label class="form-label">Avg Cost USD</label>
+          <input type="number" step="any" class="form-input" id="edit-pos-avgcost" value="${Number(pos.avgCost.toFixed(4))}"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Target Weight %</label>
+        <input type="number" step="any" class="form-input" id="edit-pos-target" value="${pos.targetWeight}"></div>
+      <div class="metric-sub" style="margin-bottom:10px;">Shares/Avg Cost set this position's starting point — any DCA entries already logged for it are replayed on top automatically.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="confirm-edit-position" data-original-ticker="${esc(pos.ticker)}">Save Changes</button>
+        <button class="btn" data-action="modal-overlay-close">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function confirmEditPosition(originalTicker) {
+  const pos = appData.positions.find(p => p.ticker === originalTicker);
+  if (!pos) { toast('Position not found', 'error'); return; }
+
+  const newTicker = document.getElementById('edit-pos-ticker').value.trim().toUpperCase();
+  const tier = document.getElementById('edit-pos-tier').value;
+  const shares = parseFloat(document.getElementById('edit-pos-shares').value) || 0;
+  const avgCost = parseFloat(document.getElementById('edit-pos-avgcost').value) || 0;
+  const targetWeight = parseFloat(document.getElementById('edit-pos-target').value) || 0;
+
+  if (!newTicker) { toast('Ticker required', 'error'); return; }
+  if (newTicker !== originalTicker && appData.positions.some(p => p.ticker === newTicker)) {
+    toast('A position with that ticker already exists', 'error');
+    return;
+  }
+
+  if (newTicker !== originalTicker) {
+    // Keep the action log (and hence derived shares/avg cost) attached to
+    // the renamed position instead of orphaning its history.
+    appData.actionLog.forEach(e => { if (e.ticker === originalTicker) e.ticker = newTicker; });
+    if (prices[originalTicker]) {
+      prices[newTicker] = prices[originalTicker];
+      delete prices[originalTicker];
+      persistPricesCache();
+    }
+  }
+
+  pos.ticker = newTicker;
+  pos.tier = tier;
+  pos.baseShares = shares;
+  pos.baseAvgCost = avgCost;
+  pos.targetWeight = targetWeight;
+  recomputeAllPositionsFromLog();
+  persistDataCache();
+  debouncedSaveToGist();
+  closeModal();
+  renderAll();
+  toast('Position updated', 'success');
+}
+
 function openAddNoteModal() {
   document.getElementById('modal-root').innerHTML = `
   <div class="modal-overlay" data-action="modal-overlay-close">
@@ -2750,8 +2957,26 @@ function attachEventDelegation() {
     renderAll();
   });
 
+  // The row menu is position:fixed at coordinates captured when it opened, so
+  // it would visually detach from its row on scroll — just close it instead.
+  document.addEventListener('scroll', () => {
+    if (openRowMenuTicker !== null) {
+      openRowMenuTicker = null;
+      openRowMenuPos = null;
+      renderAll();
+    }
+  }, true);
+
   document.addEventListener('click', async e => {
     const target = e.target.closest('[data-action]');
+    // Close the Portfolio row menu on any click that isn't inside it or its
+    // own toggle button (that toggle handles its own open/close below).
+    const isMenuClick = e.target.closest('.row-menu-wrap');
+    if (openRowMenuTicker !== null && !isMenuClick) {
+      openRowMenuTicker = null;
+      openRowMenuPos = null;
+      renderAll();
+    }
     if (!target) return;
     const action = target.dataset.action;
     switch (action) {
@@ -2762,11 +2987,43 @@ function attachEventDelegation() {
       case 'open-add-position-modal': openAddPositionModal(); break;
       case 'confirm-add-position': confirmAddPosition(); break;
       case 'modal-overlay-close': closeModal(); break;
-      case 'remove-position': removePosition(target.dataset.ticker); break;
+      case 'toggle-row-menu': {
+        const t = target.dataset.ticker;
+        if (openRowMenuTicker === t) {
+          openRowMenuTicker = null;
+          openRowMenuPos = null;
+        } else {
+          const rect = target.getBoundingClientRect();
+          openRowMenuPos = { top: rect.bottom + 4, left: Math.max(8, rect.right - 130) };
+          openRowMenuTicker = t;
+        }
+        renderAll();
+        break;
+      }
+      case 'open-edit-position-modal':
+        openRowMenuTicker = null;
+        openRowMenuPos = null;
+        renderAll();
+        openEditPositionModal(target.dataset.ticker);
+        break;
+      case 'confirm-edit-position': confirmEditPosition(target.dataset.originalTicker); break;
+      case 'open-edit-cash-modal':
+        openRowMenuTicker = null;
+        openRowMenuPos = null;
+        renderAll();
+        openEditCashModal();
+        break;
+      case 'remove-position':
+        openRowMenuTicker = null;
+        openRowMenuPos = null;
+        removePosition(target.dataset.ticker);
+        break;
       case 'refresh-market':
-        target.disabled = true;
+        isMarketRefreshing = true;
+        renderAll();
         await refreshAllMarketData();
-        target.disabled = false;
+        isMarketRefreshing = false;
+        renderAll();
         break;
       case 'save-api-settings': {
         apiConfig.finnhubKey = document.getElementById('input-finnhub-key').value.trim();
@@ -2956,9 +3213,11 @@ function attachEventDelegation() {
       case 'confirm-add-note': confirmAddNote(); break;
       case 'delete-note': deleteNote(target.dataset.noteId); break;
       case 'refresh-news':
-        target.disabled = true;
+        isNewsRefreshing = true;
+        renderAll();
         await refreshNewsData();
-        target.disabled = false;
+        isNewsRefreshing = false;
+        renderAll();
         break;
       case 'filter-news':
         newsState.filter = target.dataset.filter;
@@ -2969,6 +3228,15 @@ function attachEventDelegation() {
         saveApiConfigToStorage();
         toast('Integration settings saved', 'success');
         break;
+      case 'set-theme-pref': {
+        const key = target.dataset.themePref;
+        const value = target.dataset.value;
+        themePrefs[key] = value;
+        document.documentElement.setAttribute('data-' + key, value);
+        localStorage.setItem(LS_KEYS.themePrefs, JSON.stringify(themePrefs));
+        renderAll();
+        break;
+      }
     }
   });
 
@@ -3003,32 +3271,6 @@ function attachEventDelegation() {
       persistDataCache();
       debouncedSaveToGist();
       renderAll();
-      return;
-    }
-    const themePrefInput = e.target.closest('[data-theme-pref]');
-    if (themePrefInput) {
-      const key = themePrefInput.dataset.themePref;
-      themePrefs[key] = themePrefInput.value;
-      document.documentElement.setAttribute('data-' + key, themePrefInput.value);
-      localStorage.setItem(LS_KEYS.themePrefs, JSON.stringify(themePrefs));
-      return;
-    }
-    const posFieldInput = e.target.closest('[data-position-field]');
-    if (posFieldInput) {
-      const pos = appData.positions.find(p => p.ticker === posFieldInput.dataset.ticker);
-      if (pos) {
-        const field = posFieldInput.dataset.positionField;
-        const val = parseFloat(posFieldInput.value) || 0;
-        // Shares/avg cost edits set the position's starting base; any logged
-        // DCA entries are then replayed back on top of it automatically.
-        if (field === 'shares') pos.baseShares = val;
-        else if (field === 'avgCost') pos.baseAvgCost = val;
-        else if (field === 'targetWeight') pos.targetWeight = val;
-        recomputeAllPositionsFromLog();
-        persistDataCache();
-        debouncedSaveToGist();
-        renderAll();
-      }
       return;
     }
     if (e.target.id === 'dca-calc-budget') { dcaCalcState.budget = parseFloat(e.target.value) || 0; return; }
