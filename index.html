@@ -308,6 +308,14 @@ input,select,textarea{font-family:inherit;}
 }
 .card.highlight{border:1.5px solid var(--accent);}
 .card+.card{margin-top:14px;}
+/* .card+.card assumes cards are stacked vertically in normal flow (the
+   common case). .metrics-row lays its 4 cards out horizontally as grid
+   siblings instead, where that same adjacent-sibling margin-top pushes
+   cards 2-4 down within their grid cells while card 1 (unmatched, no
+   preceding sibling) stays flush — misaligning all 4 despite equal
+   height. Cancel it inside any grid row of cards. */
+.metrics-row > .card,
+.grid > .card{margin-top:0;}
 .section-header{
   text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
   font-size:11px;font-weight:600;margin:0 0 10px;
